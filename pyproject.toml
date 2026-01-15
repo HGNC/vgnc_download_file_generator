@@ -1,0 +1,37 @@
+[project]
+name = "vgnc-download-file-generator"
+version = "0.1.0"
+description = "Build the VGNC download files that are stored in a public accessible GCP bucket"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mysqlclient>=2.2.0",
+    "sqlalchemy>=2.0",
+    "google-cloud-storage>=2.17.0",
+    "google-cloud-secret-manager>=2.20.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-benchmark",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "types-mysqlclient",
+]
+
+[project.scripts]
+vgnc-generator = "vgnc_download_file_generator.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vgnc_download_file_generator"]
