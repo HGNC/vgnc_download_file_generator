@@ -59,32 +59,38 @@ The application will automatically fetch credentials from the secret named `vgnc
 
 ## 3. Run Your First Generation
 
+After installation, you have three ways to run the CLI:
+
+```bash
+# Option 1: Direct command (recommended)
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv json
+
+# Option 2: Shorter alias
+vgnc-generator --species 9913 --chromosome X --formats tsv json
+
+# Option 3: Python module (if entry points not in PATH)
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv json
+```
+
 ### Generate Files for a Single Species
 
 ```bash
 # Generate TSV and JSON files for cow (taxon_id: 9913), chromosome X
-uv run python -m vgnc_download_file_generator \
-  --species 9913 \
-  --chromosome X \
-  --formats tsv json
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
 ```
 
 ### Generate All Species Files
 
 ```bash
 # Generate files for all species (with taxon_id column)
-uv run python -m vgnc_download_file_generator \
-  --species All \
-  --formats tsv json
+vgnc-download-file-generator --species All --formats tsv,json
 ```
 
 ### Generate Ensembl Mapping
 
 ```bash
 # Generate VGNC to Ensembl gene ID mapping
-uv run python -m vgnc_download_file_generator \
-  --species All \
-  --file-type vgnc_ensembl
+vgnc-download-file-generator --species All --file-type vgnc_ensembl
 ```
 
 ## 4. Verify Output
@@ -101,53 +107,48 @@ gsutil cp gs://your-gcs-bucket/json/cow/cow_vgnc_gene_set_chr_X.json ./
 
 ## Common Use Cases
 
+### Dry Run - Preview What Will Be Generated
+
+```bash
+# See what files would be created (no database/GCS needed)
+vgnc-download-file-generator --species 9913 --chromosome X --dry-run
+```
+
 ### Generate Chromosome-Specific Files
 
 ```bash
 # Cow chromosome 1
-uv run python -m vgnc_download_file_generator \
-  --species 9913 \
-  --chromosome 1 \
-  --formats tsv json
+vgnc-download-file-generator --species 9913 --chromosome 1 --formats tsv,json
 
 # Zebrafish chromosome 5
-uv run python -m vgnc_download_file_generator \
-  --species 7955 \
-  --chromosome 5 \
-  --formats tsv json
+vgnc-download-file-generator --species 7955 --chromosome 5 --formats tsv,json
 ```
 
 ### Generate Locus Type Files
 
 ```bash
 # Protein-coding genes for cow
-uv run python -m vgnc_download_file_generator \
-  --species cow \
-  --locus-type gene_with_protein_product \
-  --formats tsv json
+vgnc-download-file-generator --species 9913 --locus-type "gene with protein product" --formats tsv,json
 ```
 
 ### Generate Withdrawn Entries
 
 ```bash
 # All withdrawn entries
-uv run python -m vgnc_download_file_generator \
-  --species All \
-  --file-type vgnc_withdrawn \
-  --formats tsv
+vgnc-download-file-generator --species All --file-type vgnc_withdrawn --formats tsv
 ```
 
 ## Command Line Options
 
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--species` | Species taxon ID or "All" | `--species 9913` |
-| `--chromosome` | Chromosome identifier | `--chromosome X` |
-| `--locus-type` | Locus type filter | `--locus-type gene_with_protein_product` |
-| `--locus-group` | Locus group filter | `--locus-group protein-coding_gene` |
-| `--file-type` | File generator type | `--file-type vgnc_ensembl` |
-| `--formats` | Output formats | `--formats tsv json` |
-| `--compress` | Enable gzip compression | `--compress` |
+| Option          | Description                  | Example                                        |
+| --------------- | ---------------------------- | ---------------------------------------------- |
+| `--species`     | Species taxon ID or "All"    | `--species 9913`                               |
+| `--chromosome`  | Chromosome identifier        | `--chromosome X`                               |
+| `--locus-type`  | Locus type filter            | `--locus-type "gene with protein product"`       |
+| `--locus-group` | Locus group filter           | `--locus-group "protein-coding gene"`            |
+| `--file-type`   | File generator type          | `--file-type vgnc_ensembl`                     |
+| `--formats`     | Output formats               | `--formats tsv json`                           |
+| `--compress`    | Enable gzip compression      | `--compress`                                   |
 
 ## Python API Quick Start
 
@@ -225,6 +226,7 @@ python --version  # Should be 3.13+
 ## Support
 
 For issues or questions:
+
 - Open an issue on GitHub
 - Check existing documentation
 - Review test files for usage examples

@@ -2,7 +2,7 @@
 
 A Python tool for generating VGNC (Vertebrate Gene Nomenclature Consortium) download files and uploading them to Google Cloud Storage.
 
-[![Tests](https://img.shields.io/badge/tests-190%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-216%20passing-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)](#test-coverage)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -84,23 +84,36 @@ For more usage examples and common use cases, see the [Quick Start Guide](QUICK_
 
 ### Command Line
 
+After installation, two CLI commands are available:
+
 ```bash
-# Generate files for a specific species
-uv run python -m vgnc_download_file_generator \
-  --species 9593 \
-  --chromosome X \
-  --formats tsv json
+# Use the shorter command (recommended)
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv json
+
+# Or use the shorter alias
+vgnc-generator --species 9913 --chromosome X --formats tsv json
+
+# Or use python module syntax
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv json
+```
+
+**Examples:**
+
+```bash
+# Generate files for a specific species (cow = 9913)
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
 
 # Generate all species files
-uv run python -m vgnc_download_file_generator \
-  --species All \
-  --formats tsv json
+vgnc-download-file-generator --species All --formats tsv,json
+
+# Generate Ensembl mapping
+vgnc-download-file-generator --species All --file-type vgnc_ensembl
 
 # Generate locus type files
-uv run python -m vgnc_download_file_generator \
-  --species cow \
-  --locus-type gene_with_protein_product \
-  --formats tsv
+vgnc-download-file-generator --species 9913 --locus-type "gene with protein product" --formats tsv
+
+# Dry run to see what would be generated
+vgnc-download-file-generator --species 9913 --chromosome X --dry-run
 ```
 
 ### Python API
@@ -165,7 +178,22 @@ src/vgnc_download_file_generator/
 
 ### Running Tests
 
+The project has three types of tests:
+
+1. **Unit Tests**: Fast tests with mocked dependencies (216 tests)
+2. **Integration Tests**: Tests against real database and GCS (28 tests)
+3. **E2E Tests**: Full CLI workflow tests (16 tests)
+
 ```bash
+# Run unit tests only (default - fast, no external dependencies)
+uv run pytest -m "not integration and not e2e"
+
+# Run integration tests (requires real database and GCS)
+uv run pytest --integration
+
+# Run E2E tests (requires full environment)
+uv run pytest --e2e
+
 # Run all tests
 uv run pytest
 
@@ -175,6 +203,11 @@ uv run pytest --cov=src/vgnc_download_file_generator --cov-report=html
 # Run specific test file
 uv run pytest tests/test_gcs_writer.py -v
 ```
+
+**Note**: Integration and E2E tests require:
+- `GOOGLE_APPLICATION_CREDENTIALS` pointing to a service account key
+- Database credentials via environment variables or GCP Secret Manager
+- Access to the test GCS bucket
 
 ### Code Quality
 
@@ -191,7 +224,7 @@ uv run ruff format src/
 
 ### Test Coverage
 
-Current coverage: **94%** (190 tests)
+Current coverage: **94%** (260 total tests: 216 unit + 28 integration + 16 E2E)
 
 ## File Formats
 
@@ -200,7 +233,7 @@ Current coverage: **94%** (190 tests)
 - **JSON**: Array of objects with lowercase_underscore keys
 - **Special cases**:
   - `All` species: Adds `taxon_id` and `primary_db_id` columns
-  - Zebrafish (taxon 9913): Adds `bgd_id` column
+  - Cattle/Bos taurus (taxon 9913): Adds `bgd_id` column
 
 ### Ensembl Mapping
 - Single file mapping VGNC IDs to Ensembl gene IDs

@@ -117,14 +117,17 @@ class TestBuildGeneQuery:
         query = build_gene_query()
         query_str = str(query).upper()
 
-        # Should not have WHERE clause when no filters
-        # Note: might have WHERE 1=1 or similar for dynamic building
-        if "WHERE" in query_str:
-            # If there's WHERE, it should be a trivial one like "WHERE 1=1"
-            lines = query_str.split("\n")
-            for line in lines:
-                if "WHERE" in line:
-                    assert "1=1" in line or "TRUE" in line
+        # The main query should have WHERE 1=1 for dynamic building
+        # Subqueries have WHERE clauses for filtering aliases
+        lines = query_str.split("\n")
+        main_query_has_trivial_where = False
+        for line in lines:
+            # Check for WHERE 1=1 in main query (before subqueries)
+            if "WHERE 1=1" in line:
+                main_query_has_trivial_where = True
+                break
+
+        assert main_query_has_trivial_where, "Main query should have WHERE 1=1 for dynamic filter building"
 
     def test_single_filter_taxon_id(self) -> None:
         """Test single filter by taxon_id."""
@@ -152,7 +155,7 @@ class TestBuildGeneQuery:
         """Test single filter by locus_type."""
         from vgnc_download_file_generator.database.queries import build_gene_query
 
-        query = build_gene_query(filters={"locus_type": "gene_with_protein_product"})
+        query = build_gene_query(filters={"locus_type": "gene with protein product"})
         query_str = str(query)
 
         # Should have WHERE clause with locus_type filter
@@ -163,7 +166,7 @@ class TestBuildGeneQuery:
         """Test single filter by locus_group."""
         from vgnc_download_file_generator.database.queries import build_gene_query
 
-        query = build_gene_query(filters={"locus_group": "protein-coding_gene"})
+        query = build_gene_query(filters={"locus_group": "protein-coding gene"})
         query_str = str(query)
 
         # Should have WHERE clause with locus_group filter

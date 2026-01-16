@@ -83,8 +83,8 @@ class TestFileSpecDataclass:
         spec = FileSpec(
             species_id=9593,
             species_name="bolivian_squirrel_monkey",
-            locus_group="protein-coding_gene",
-            locus_type="gene_with_protein_product",
+            locus_group="protein-coding gene",
+            locus_type="gene with protein product",
             chromosome="X",
             file_type="vgnc_public",
             extension="json",
@@ -93,8 +93,8 @@ class TestFileSpecDataclass:
         repr_str = repr(spec)
         assert "9593" in repr_str
         assert "bolivian_squirrel_monkey" in repr_str
-        assert "protein-coding_gene" in repr_str
-        assert "gene_with_protein_product" in repr_str
+        assert "protein-coding gene" in repr_str
+        assert "gene with protein product" in repr_str
 
     def test_file_type_accepts_valid_values(self) -> None:
         """Test that file_type accepts valid Literal values."""
@@ -168,7 +168,7 @@ class TestGcsPathMethod:
             species_id=9593,
             species_name="cow",
             locus_group=None,
-            locus_type="gene_with_protein_product",
+            locus_type="gene with protein product",
             chromosome=None,
             file_type="vgnc_public",
             extension="json",
@@ -176,6 +176,7 @@ class TestGcsPathMethod:
 
         path = spec.gcs_path()
         # Expected: json/cow/locus_types/cow_gene_with_protein_product_All.json
+        # (spaces converted to underscores for clean URLs)
         assert "json/" in path
         assert "cow/" in path
         assert "locus_types/" in path
@@ -239,7 +240,7 @@ class TestGcsPathMethod:
             species_id=9466,
             species_name="cow",
             locus_group=None,
-            locus_type="gene_with_protein_product",
+            locus_type="gene with protein product",
             chromosome="1",
             file_type="vgnc_public",
             extension="json",
@@ -255,7 +256,7 @@ class TestGcsPathMethod:
         spec = FileSpec(
             species_id=9593,
             species_name="cow",
-            locus_group="protein-coding_gene",
+            locus_group="protein-coding gene",
             locus_type=None,
             chromosome=None,
             file_type="vgnc_public",
@@ -264,6 +265,7 @@ class TestGcsPathMethod:
 
         path = spec.gcs_path()
         # Expected format similar to locus_type
+        # (spaces and hyphens converted to underscores for clean URLs)
         assert "json/" in path
         assert "cow/" in path
-        assert "protein-coding_gene" in path.lower()
+        assert "protein_coding_gene" in path.lower()

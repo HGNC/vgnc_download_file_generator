@@ -28,6 +28,22 @@ class VgncWithdrawn(BaseFileGenerator):
         "MERGED_INTO_REPORT(S)",
     ]
 
+    def _get_column_map(self) -> dict[str, str]:
+        """Get mapping from database column names to withdrawn headers.
+
+        The database query returns columns with different names than the
+        withdrawn headers. This method provides the mapping.
+
+        Returns:
+            Dictionary mapping database column names to withdrawn header names
+        """
+        return {
+            "genefam_id": "VGNC_ID",
+            "assigned_id": "VGNC_ID",
+            "assigned_symbol": "WITHDRAWN_SYMBOL",
+            "gene_status": "STATUS",
+        }
+
     def get_headers(self, extension: str) -> list[str]:  # noqa: ARG002
         """Get column headers for the file format.
 
@@ -91,14 +107,31 @@ class VgncWithdrawn(BaseFileGenerator):
         # Get streaming cursor from database
         cursor = self.db.get_streaming_cursor()
 
-        # Execute the query
-        cursor.execute(query)
+        # Compile query for MySQLdb and execute
+        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
+
+        sql, params = compile_query_for_mysql(query)
+        cursor.execute(sql, params)
 
         # Get column names from cursor description
-        headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        # cursor.description is a sequence of (name, type_code, ...) tuples
+        db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
 
-        # Stream rows using the stream_gene_data utility
-        yield from stream_gene_data(cursor, headers, chunk_size)
+        # Create mapping from database column names to standard headers
+        column_map = self._get_column_map()
+
+        # Map database headers to standard headers and stream rows
+        for chunk in stream_gene_data(cursor, db_headers, chunk_size):
+            # Convert each row dict to use standard header names
+            mapped_chunk = []
+            for row_dict in chunk:
+                mapped_dict = {}
+                for db_col, value in row_dict.items():
+                    # Map database column to standard header
+                    standard_header = column_map.get(db_col, db_col)
+                    mapped_dict[standard_header] = value
+                mapped_chunk.append(mapped_dict)
+            yield mapped_chunk
 
     def generate_tsv_rows(self) -> Generator[str]:
         """Generate TSV-formatted rows as strings.

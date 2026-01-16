@@ -72,15 +72,15 @@ class TestBaseFileGeneratorAbstract:
             db=db,
             species=species,
             chromosome="X",
-            locus_group="protein-coding_gene",
-            locus_type="gene_with_protein_product",
+            locus_group="protein-coding gene",
+            locus_type="gene with protein product",
         )
 
         assert generator.db == db
         assert generator.species == species
         assert generator.chromosome == "X"
-        assert generator.locus_group == "protein-coding_gene"
-        assert generator.locus_type == "gene_with_protein_product"
+        assert generator.locus_group == "protein-coding gene"
+        assert generator.locus_type == "gene with protein product"
 
 
 class TestGenerateFilenameMethod:
@@ -132,7 +132,7 @@ class TestGenerateFilenameMethod:
             species=species,
             chromosome=None,
             locus_group=None,
-            locus_type="gene_with_protein_product",
+            locus_type="gene with protein product",
         )
 
         filename = generator.generate_filename("txt")

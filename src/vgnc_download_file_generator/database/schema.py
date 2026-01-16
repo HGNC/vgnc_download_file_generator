@@ -67,7 +67,7 @@ class LocusType(Base):
 
     Attributes:
         id: Primary key
-        type: Locus type (e.g., "gene_with_protein_product", "pseudogene")
+        type: Locus type (e.g., "gene with protein product", "pseudogene")
         locus_group_id: Foreign key to locus_group table
     """
 

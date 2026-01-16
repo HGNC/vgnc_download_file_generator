@@ -875,6 +875,7 @@ dependencies = [
     { name = "mysqlclient" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "rich" },
     { name = "sqlalchemy" },
 ]
@@ -903,6 +904,7 @@ requires-dist = [
     { name = "pytest-benchmark", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },

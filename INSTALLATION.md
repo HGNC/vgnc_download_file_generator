@@ -270,11 +270,17 @@ print(f'Bucket: {writer.bucket_name}')
 ### 3. Test Run
 
 ```bash
-# Generate a small test file
-uv run python -m vgnc_download_file_generator \
-  --species 9913 \
-  --chromosome X \
-  --formats tsv
+# Dry run to verify configuration (no database/GCS connection needed)
+vgnc-download-file-generator --species 9913 --chromosome X --dry-run
+
+# Generate a test file (requires database and GCS configuration)
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv
+
+# Or use the shorter alias
+vgnc-generator --species 9913 --chromosome X --formats tsv
+
+# Or use python module syntax
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv
 
 # Verify output in GCS
 gsutil ls gs://your-bucket-name/json/cow/

@@ -49,12 +49,48 @@ class VgncPublic(BaseFileGenerator):
         "hgnc_orthologs",
     ]
 
+    def _get_column_map(self) -> dict[str, str]:
+        """Get mapping from database column names to standard headers.
+
+        The database query returns columns with different names than the
+        standard VGNC headers. This method provides the mapping.
+
+        Returns:
+            Dictionary mapping database column names to standard header names
+        """
+        return {
+            "genefam_id": "vgnc_id",
+            "assigned_id": "vgnc_id",
+            "assigned_symbol": "symbol",
+            "assigned_name": "name",
+            "gene_status": "status",
+            "locus_group": "locus_group",
+            "locus_type": "locus_type",
+            "chromosome": "location",
+            "gene_family": "gene_family",
+            "gene_family_id": "gene_family_id",
+            "ncbi_gene_id": "ncbi_id",
+            "ensembl_gene_id": "ensembl_gene_id",
+            "uniprot_ids": "uniprot_ids",
+            "pubmed_id": "pubmed_id",
+            "hgnc_orthologs": "hgnc_orthologs",
+            "bgd_id": "bgd_id",
+            "date_approved_reserved": "date_approved_reserved",
+            "date_modified": "date_modified",
+            "date_symbol_changed": "date_symbol_changed",
+            "date_name_changed": "date_name_changed",
+            "alias_symbol": "alias_symbol",
+            "alias_name": "alias_name",
+            "prev_symbol": "prev_symbol",
+            "prev_name": "prev_name",
+        }
+
     def get_headers(self, extension: str) -> list[str]:  # noqa: ARG002
         """Get column headers for the file format.
 
         Returns standard 22 headers with special cases:
         - 'All' species: adds taxon_id first and primary_db_id last
-        - Zebrafish (taxon 9913): adds bgd_id before pubmed_id
+        - Cattle/Bos taurus (taxon 9913): adds bgd_id before pubmed_id
 
         Args:
             extension: File extension (txt or json)
@@ -70,9 +106,9 @@ class VgncPublic(BaseFileGenerator):
             headers.insert(0, "taxon_id")
             headers.append("primary_db_id")
 
-        # Handle Zebrafish (taxon 9913) - add bgd_id before pubmed_id
-        is_zebrafish = self.species.taxon_id == 9913
-        if is_zebrafish:
+        # Handle Cattle/Bos taurus (taxon 9913) - add bgd_id before pubmed_id
+        is_cattle = self.species.taxon_id == 9913
+        if is_cattle:
             pubmed_idx = headers.index("pubmed_id")
             headers.insert(pubmed_idx, "bgd_id")
 
@@ -117,15 +153,31 @@ class VgncPublic(BaseFileGenerator):
         # Get streaming cursor from database
         cursor = self.db.get_streaming_cursor()
 
-        # Execute the query
-        cursor.execute(query)
+        # Compile query for MySQLdb and execute
+        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
+
+        sql, params = compile_query_for_mysql(query)
+        cursor.execute(sql, params)
 
         # Get column names from cursor description
         # cursor.description is a sequence of (name, type_code, ...) tuples
-        headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
 
-        # Stream rows using the stream_gene_data utility
-        yield from stream_gene_data(cursor, headers, chunk_size)
+        # Create mapping from database column names to standard headers
+        column_map = self._get_column_map()
+
+        # Map database headers to standard headers and stream rows
+        for chunk in stream_gene_data(cursor, db_headers, chunk_size):
+            # Convert each row dict to use standard header names
+            mapped_chunk = []
+            for row_dict in chunk:
+                mapped_dict = {}
+                for db_col, value in row_dict.items():
+                    # Map database column to standard header
+                    standard_header = column_map.get(db_col, db_col)
+                    mapped_dict[standard_header] = value
+                mapped_chunk.append(mapped_dict)
+            yield mapped_chunk
 
     def generate_tsv_rows(self) -> Generator[str]:
         """Generate TSV-formatted rows as strings.

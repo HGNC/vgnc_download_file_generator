@@ -41,8 +41,8 @@ class FileSpec:
     Attributes:
         species_id: Species taxonomy ID (int) or 'All' for combined files
         species_name: Display name of the species (e.g., "Bolivian squirrel monkey")
-        locus_group: Optional locus group filter (e.g., "protein-coding_gene")
-        locus_type: Optional locus type filter (e.g., "gene_with_protein_product")
+        locus_group: Optional locus group filter (e.g., "protein-coding gene")
+        locus_type: Optional locus type filter (e.g., "gene with protein product")
         chromosome: Optional chromosome filter (e.g., "X", "1", "Un")
         file_type: Type of file (vgnc_public, vgnc_ensembl, or vgnc_withdrawn)
         extension: File extension (txt or json)
@@ -96,7 +96,7 @@ class FileSpec:
             ...     species_id=9466,
             ...     species_name="cow",
             ...     locus_group=None,
-            ...     locus_type="gene_with_protein_product",
+            ...     locus_type="gene with protein product",
             ...     chromosome=None,
             ...     file_type="vgnc_public",
             ...     extension="json",
@@ -117,12 +117,16 @@ class FileSpec:
 
         if self.locus_type is not None:
             # Locus type-specific file: json/{species}/locus_types/{species}_{locus_type}_All.{ext}
-            filename = f"{normalized_name}_{self.locus_type}_All.{self.extension}"
+            # Convert spaces to underscores for clean URLs
+            locus_type_normalized = self.locus_type.replace(" ", "_")
+            filename = f"{normalized_name}_{locus_type_normalized}_All.{self.extension}"
             return f"json/{normalized_name}/locus_types/{filename}"
 
         if self.locus_group is not None:
             # Locus group-specific file: json/{species}/locus_groups/{species}_{locus_group}_All.{ext}
-            filename = f"{normalized_name}_{self.locus_group}_All.{self.extension}"
+            # Convert spaces and hyphens to underscores for clean URLs
+            locus_group_normalized = self.locus_group.replace(" ", "_").replace("-", "_")
+            filename = f"{normalized_name}_{locus_group_normalized}_All.{self.extension}"
             return f"json/{normalized_name}/locus_groups/{filename}"
 
         # Default: species-specific file with no chromosome filter

@@ -48,3 +48,4 @@ WARP.md
 .venv
 .coverage
 __pycache__
+vgnc-pipeline-dev.json

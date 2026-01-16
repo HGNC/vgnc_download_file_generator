@@ -13,6 +13,7 @@ dependencies = [
     "rich>=13.0.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ dev = [
 
 [project.scripts]
 vgnc-generator = "vgnc_download_file_generator.__main__:main"
+vgnc-download-file-generator = "vgnc_download_file_generator.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
