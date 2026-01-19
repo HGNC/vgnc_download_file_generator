@@ -230,3 +230,57 @@ class TestBuildGeneQuery:
         query_str = str(query).upper()
         assert "LIMIT" not in query_str
 
+
+class TestBuildSpeciesDisplayNameQuery:
+    """Tests for build_species_display_name_query function."""
+
+    def test_generates_sql_with_correct_select(self) -> None:
+        """Test that generated SQL selects display_name."""
+        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+
+        query = build_species_display_name_query(9913)
+
+        # Check query selects display_name
+        query_str = str(query)
+        assert "SELECT" in query_str.upper()
+        assert "display_name" in query_str
+
+    def test_filters_by_taxon_id(self) -> None:
+        """Test that query filters by taxon_id."""
+        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+
+        query = build_species_display_name_query(9913)
+
+        # Check query filters by taxon_id
+        query_str = str(query)
+        assert "WHERE" in query_str.upper()
+        assert "taxon_id" in query_str.lower()
+
+    def test_uses_bind_params_for_taxon_id(self) -> None:
+        """Test that query uses bind parameters for taxon_id."""
+        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+
+        query = build_species_display_name_query(9913)
+
+        # Check query uses bind parameters
+        query_str = str(query)
+        assert ":taxon_id" in query_str or "taxon_id" in query_str
+
+    def test_selects_from_species_table(self) -> None:
+        """Test that query selects from species table."""
+        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+
+        query = build_species_display_name_query(9913)
+
+        # Check it queries species table
+        query_str = str(query)
+        assert "FROM species" in query_str or "FROM `species`" in query_str
+
+    def test_returns_text_construct(self) -> None:
+        """Test that function returns SQLAlchemy text construct."""
+        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+
+        query = build_species_display_name_query(9913)
+
+        assert isinstance(query, TextClause)
+

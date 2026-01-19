@@ -174,17 +174,17 @@ class TestSettingsLoading:
         assert config.runtime.chunk_size == 5000
         assert config.runtime.max_workers == 8
 
-    def test_validation_error_on_missing_required_fields(
+    def test_missing_database_credentials_without_secret_manager_raises_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test ValidationError raised when required fields are missing."""
-        # Only set some fields, missing others
-        monkeypatch.setenv("APP_DATABASE_DBHOST", "test-host")
-        monkeypatch.setenv("APP_DATABASE_DBUSER", "test-user")
-        # Missing dbpasswd, dbport, dbname
-        # Missing gcs and runtime entirely
+        """Test ValueError raised when database credentials are missing and Secret Manager not configured."""
+        # Set GCS and runtime, but missing database credentials
+        monkeypatch.setenv("APP_GCS_BUCKET_NAME", "test-bucket")
+        monkeypatch.setenv("APP_GCS_PROJECT_ID", "test-project")
+        # Make sure Secret Manager is not configured
+        monkeypatch.delenv("GOOGLE_SECRET_MANAGER_SECRET_NAME", raising=False)
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError, match="Database credentials not found"):
             get_settings()
 
     def test_prefix_parsing(

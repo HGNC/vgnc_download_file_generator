@@ -63,13 +63,13 @@ After installation, you have three ways to run the CLI:
 
 ```bash
 # Option 1: Direct command (recommended)
-vgnc-download-file-generator --species 9913 --chromosome X --formats tsv json
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
 
 # Option 2: Shorter alias
-vgnc-generator --species 9913 --chromosome X --formats tsv json
+vgnc-generator --species 9913 --chromosome X --formats tsv,json
 
 # Option 3: Python module (if entry points not in PATH)
-uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv json
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv,json
 ```
 
 ### Generate Files for a Single Species
@@ -98,8 +98,11 @@ vgnc-download-file-generator --species All --file-type vgnc_ensembl
 Check your GCS bucket:
 
 ```bash
-# List files in the bucket
+# List JSON files in the bucket
 gsutil ls gs://your-gcs-bucket/json/
+
+# List TSV files in the bucket
+gsutil ls gs://your-gcs-bucket/tsv/
 
 # Download a sample file
 gsutil cp gs://your-gcs-bucket/json/cow/cow_vgnc_gene_set_chr_X.json ./
@@ -147,7 +150,7 @@ vgnc-download-file-generator --species All --file-type vgnc_withdrawn --formats 
 | `--locus-type`  | Locus type filter            | `--locus-type "gene with protein product"`       |
 | `--locus-group` | Locus group filter           | `--locus-group "protein-coding gene"`            |
 | `--file-type`   | File generator type          | `--file-type vgnc_ensembl`                     |
-| `--formats`     | Output formats               | `--formats tsv json`                           |
+| `--formats`     | Output formats (comma-separated) | `--formats tsv,json`                        |
 | `--compress`    | Enable gzip compression      | `--compress`                                   |
 
 ## Python API Quick Start

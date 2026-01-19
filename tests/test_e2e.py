@@ -117,8 +117,8 @@ class TestCLIWithRealServices:
         assert "All files generated successfully" in result.output
 
         # Verify file was created in GCS
-        # The actual path is json/taxon_id_9913/
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        # For species 9913 (cow), TSV files now use tsv/cow/
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
         assert len(blobs) > 0
 
         # Cleanup test files
@@ -146,7 +146,7 @@ class TestCLIWithRealServices:
         assert "All files generated successfully" in result.output
 
         # Verify file was created in GCS
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        blobs = list(test_gcs_bucket.list_blobs(prefix="json/cow/"))
         assert len(blobs) > 0
 
         # Verify JSON file is valid
@@ -180,12 +180,14 @@ class TestCLIWithRealServices:
         assert result.exit_code == 0
         assert "All files generated successfully" in result.output
 
-        # Should have created files in GCS
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
-        assert len(blobs) >= 2  # At least TSV and JSON
+        # Should have created files in GCS - check both directories
+        tsv_blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
+        json_blobs = list(test_gcs_bucket.list_blobs(prefix="json/cow/"))
+        total_blobs = tsv_blobs + json_blobs
+        assert len(total_blobs) >= 2  # At least TSV and JSON
 
         # Cleanup
-        for blob in blobs:
+        for blob in total_blobs:
             blob.delete()
 
     def test_generate_ensembl_mapping(self, real_config, test_gcs_bucket) -> None:
@@ -235,7 +237,7 @@ class TestCLIWithRealServices:
         assert result.exit_code == 0
 
         # Verify compressed files
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
         assert len(blobs) > 0
 
         # Check content type
@@ -268,7 +270,7 @@ class TestCLIWithRealServices:
         assert "Writing rows" in result.output or "Wrote" in result.output
 
         # Cleanup
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
         for blob in blobs:
             blob.delete()
 
@@ -320,8 +322,8 @@ class TestCLIFileGeneration:
 
         assert result.exit_code == 0
 
-        # Find the generated file
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        # Find the generated file - TSV files now use tsv/cow/
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
         tsv_blob = None
         for blob in blobs:
             if blob.name.endswith(".txt"):
@@ -362,7 +364,7 @@ class TestCLIFileGeneration:
         assert result.exit_code == 0
 
         # Find the generated JSON file
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        blobs = list(test_gcs_bucket.list_blobs(prefix="json/cow/"))
         json_blob = None
         for blob in blobs:
             if blob.name.endswith(".json"):
@@ -433,8 +435,8 @@ class TestCLIWithDifferentOptions:
 
         assert result.exit_code == 0
 
-        # Check for locus type files
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/taxon_id_9913/"))
+        # Check for locus type files - TSV files now use tsv/cow/
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/cow/"))
         assert len(blobs) > 0
 
         # Cleanup
@@ -457,8 +459,8 @@ class TestCLIWithDifferentOptions:
 
         assert result.exit_code == 0
 
-        # Find the generated file
-        blobs = list(test_gcs_bucket.list_blobs(prefix="json/"))
+        # Find the generated file - All species TSV files are at tsv/All/
+        blobs = list(test_gcs_bucket.list_blobs(prefix="tsv/All/"))
         assert len(blobs) > 0
 
         # Cleanup

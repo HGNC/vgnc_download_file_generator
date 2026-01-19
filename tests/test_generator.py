@@ -112,7 +112,8 @@ class TestGenerateFilenameMethod:
         # Should match FileSpec logic for GCS path
         assert "json/" in filename
         assert "bolivian_squirrel_monkey" in filename
-        assert "chrX.json" in filename
+        assert "chr_X.json" in filename
+        assert "_vgnc_gene_set_" in filename
 
     def test_generates_txt_filename(self) -> None:
         """Test generate_filename for TXT files."""
@@ -138,8 +139,8 @@ class TestGenerateFilenameMethod:
         filename = generator.generate_filename("txt")
 
         # Should match FileSpec logic for GCS path
-        assert "json/" in filename
-        assert "cow/" in filename
+        assert "tsv/" in filename
+        assert "cattle/" in filename
         assert "locus_types/" in filename
         assert "gene_with_protein_product_All.txt" in filename
 

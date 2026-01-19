@@ -88,13 +88,13 @@ After installation, two CLI commands are available:
 
 ```bash
 # Use the shorter command (recommended)
-vgnc-download-file-generator --species 9913 --chromosome X --formats tsv json
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
 
 # Or use the shorter alias
-vgnc-generator --species 9913 --chromosome X --formats tsv json
+vgnc-generator --species 9913 --chromosome X --formats tsv,json
 
 # Or use python module syntax
-uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv json
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv,json
 ```
 
 **Examples:**
@@ -253,6 +253,11 @@ bucket/
 │   │   ├── {species}_vgnc_gene_set_chr_{chromosome}.json
 │   │   └── locus_types/
 │   │       └── {species}_{locus_type}_All.json
+├── tsv/
+│   ├── {species}/
+│   │   ├── {species}_vgnc_gene_set_chr_{chromosome}.txt
+│   │   └── locus_types/
+│   │       └── {species}_{locus_type}_All.txt
 ├── ensembl/
 │   └── VGNC_to_Ensembl_mapping.txt
 └── withdrawn/

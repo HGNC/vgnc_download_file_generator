@@ -208,21 +208,6 @@ def main(
         console.print(f"  Database: {config.database.dbhost}:{config.database.dbport}/{config.database.dbname}")
         console.print()
 
-        # Parse species
-        if species.lower() == "all":
-            species_id: int | str = "All"
-            display_name = "All"
-        else:
-            try:
-                species_id = int(species)
-                display_name = f"taxon_id {species_id}"
-            except ValueError:
-                console.print(f"[red]Error: Invalid species ID '{species}'. Must be a number or 'All'[/red]")
-                sys.exit(1)
-
-        # Create species info
-        species_info = SpeciesInfo(taxon_id=species_id, display_name=display_name, is_live="Y")
-
         # Initialize database connection
         console.print("[dim]Connecting to database...[/dim]")
         db = DatabaseConnection(config.database)
@@ -233,6 +218,35 @@ def main(
             bucket_name=config.gcs.bucket_name,
             project_id=config.gcs.project_id,
         )
+
+        # Parse species and get display name from database
+        if species.lower() == "all":
+            species_id: int | str = "All"
+            display_name = "All"
+        else:
+            try:
+                species_id = int(species)
+                # Query database for actual species display name
+                from vgnc_download_file_generator.database.queries import build_species_display_name_query, compile_query_for_mysql
+
+                query = build_species_display_name_query(species_id)
+                cursor = db.get_streaming_cursor()
+                sql, params = compile_query_for_mysql(query)
+                cursor.execute(sql, params)
+                result = cursor.fetchone()
+                cursor.close()
+
+                if result and result[0]:
+                    display_name = result[0]
+                else:
+                    console.print(f"[yellow]Warning: Species ID {species_id} not found in database. Using taxon_id as display name.[/yellow]")
+                    display_name = f"taxon_id_{species_id}"
+            except ValueError:
+                console.print(f"[red]Error: Invalid species ID '{species}'. Must be a number or 'All'[/red]")
+                sys.exit(1)
+
+        # Create species info with actual display name from database
+        species_info = SpeciesInfo(taxon_id=species_id, display_name=display_name, is_live="Y")
 
         # Create the appropriate generator
         generator_class: type[BaseFileGenerator]
@@ -295,6 +309,14 @@ def main(
 
                     console.print(f"[green]✓[/green] Wrote {lines_written:,} lines to {filename}")
 
+                    # Create backward compatibility copy for "cow" -> "cattle"
+                    if display_name.lower() == "cow":
+                        try:
+                            gcs_writer.create_backward_compatibility_copy(filename, legacy_species="cow")
+                            console.print("[dim]  Created backward compatibility copy (cow -> cattle)[/dim]")
+                        except Exception as e:
+                            console.print(f"[yellow]  Warning: Failed to create backward compatibility copy: {e}[/yellow]")
+
             else:  # json
                 # Stream JSON directly to GCS
                 with gcs_writer.open_write_stream(filename, content_type, compress=compress) as f:
@@ -325,6 +347,14 @@ def main(
                         f.write("\n]")
 
                     console.print(f"[green]✓[/green] Wrote {rows_written:,} rows to {filename}")
+
+                    # Create backward compatibility copy for "cow" -> "cattle"
+                    if display_name.lower() == "cow":
+                        try:
+                            gcs_writer.create_backward_compatibility_copy(filename, legacy_species="cow")
+                            console.print("[dim]  Created backward compatibility copy (cow -> cattle)[/dim]")
+                        except Exception as e:
+                            console.print(f"[yellow]  Warning: Failed to create backward compatibility copy: {e}[/yellow]")
 
         console.print()
         console.print("[bold green]All files generated successfully![/bold green]")

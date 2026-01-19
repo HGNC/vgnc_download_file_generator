@@ -141,10 +141,30 @@ class TestGcsPathMethod:
         )
 
         path = spec.gcs_path()
-        # Expected format: json/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.json
+        # Expected format: json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_chr_X.json
         assert "json/" in path
         assert "bolivian_squirrel_monkey/" in path
-        assert "chrX.json" in path
+        assert "chr_X.json" in path
+        assert "_vgnc_gene_set_" in path
+
+    def test_chromosome_tsv_path(self) -> None:
+        """Test GCS path for chromosome-specific TSV file."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="bolivian_squirrel_monkey",
+            locus_group=None,
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected format: tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_chr_X.txt
+        assert "tsv/" in path
+        assert "bolivian_squirrel_monkey/" in path
+        assert "chr_X.txt" in path
+        assert "_vgnc_gene_set_" in path
 
     def test_all_species_ensembl_path(self) -> None:
         """Test GCS path for Ensembl mapping file (All species)."""
@@ -178,9 +198,29 @@ class TestGcsPathMethod:
         # Expected: json/cow/locus_types/cow_gene_with_protein_product_All.json
         # (spaces converted to underscores for clean URLs)
         assert "json/" in path
-        assert "cow/" in path
+        assert "cattle/" in path
         assert "locus_types/" in path
         assert "gene_with_protein_product_All.json" in path
+
+    def test_locus_type_tsv_path(self) -> None:
+        """Test GCS path for locus_type-specific TSV file."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/cow/locus_types/cow_gene_with_protein_product_All.txt
+        # (spaces converted to underscores for clean URLs)
+        assert "tsv/" in path
+        assert "cattle/" in path
+        assert "locus_types/" in path
+        assert "gene_with_protein_product_All.txt" in path
 
     def test_species_name_normalization_spaces_to_underscores(self) -> None:
         """Test that spaces in species names are converted to underscores."""
@@ -215,7 +255,7 @@ class TestGcsPathMethod:
         path = spec.gcs_path()
         # Apostrophes should be preserved (or handled consistently)
         assert "mark" in path.lower()
-        assert "chr1.json" in path
+        assert "chr_1.json" in path
 
     def test_prd_example_bolivian_squirrel_monkey(self) -> None:
         """Test PRD example: bolivian_squirrel_monkey_vgnc_gene_set_chr_Un.json."""
@@ -232,7 +272,7 @@ class TestGcsPathMethod:
         path = spec.gcs_path()
         # Should match PRD example format
         assert "bolivian_squirrel_monkey" in path
-        assert "chrUn.json" in path
+        assert "chr_Un.json" in path
 
     def test_prd_example_cow_gene_with_protein_product(self) -> None:
         """Test PRD example: cow_gene_with_protein_product_chr_1.json."""
@@ -248,8 +288,8 @@ class TestGcsPathMethod:
 
         path = spec.gcs_path()
         # Should match PRD example format
-        assert "cow/" in path
-        assert "chr1.json" in path
+        assert "cattle/" in path
+        assert "chr_1.json" in path
 
     def test_locus_group_path(self) -> None:
         """Test GCS path for locus_group-specific file."""
@@ -267,5 +307,155 @@ class TestGcsPathMethod:
         # Expected format similar to locus_type
         # (spaces and hyphens converted to underscores for clean URLs)
         assert "json/" in path
-        assert "cow/" in path
+        assert "cattle/" in path
         assert "protein_coding_gene" in path.lower()
+
+    def test_locus_group_tsv_path(self) -> None:
+        """Test GCS path for locus_group-specific TSV file."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group="protein-coding gene",
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected format similar to locus_type but with tsv subdirectory
+        # (spaces and hyphens converted to underscores for clean URLs)
+        assert "tsv/" in path
+        assert "cattle/" in path
+        assert "protein_coding_gene" in path.lower()
+
+    def test_locus_type_with_chromosome_json_path(self) -> None:
+        """Test GCS path for locus_type-specific JSON file with chromosome filter."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome="1",
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Expected: json/cow/locus_types/cow_gene_with_protein_product_chr_1.json
+        assert "json/" in path
+        assert "cattle/" in path
+        assert "locus_types/" in path
+        assert "chr_1.json" in path
+
+    def test_locus_type_with_chromosome_tsv_path(self) -> None:
+        """Test GCS path for locus_type-specific TSV file with chromosome filter."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/cow/locus_types/cow_gene_with_protein_product_chr_X.txt
+        assert "tsv/" in path
+        assert "cattle/" in path
+        assert "locus_types/" in path
+        assert "chr_X.txt" in path
+
+    def test_locus_group_with_chromosome_json_path(self) -> None:
+        """Test GCS path for locus_group-specific JSON file with chromosome filter."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group="protein-coding gene",
+            locus_type=None,
+            chromosome="1",
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Expected: json/cow/locus_groups/cow_protein_coding_gene_chr_1.json
+        assert "json/" in path
+        assert "cattle/" in path
+        assert "locus_groups/" in path
+        assert "chr_1.json" in path
+
+    def test_locus_group_with_chromosome_tsv_path(self) -> None:
+        """Test GCS path for locus_group-specific TSV file with chromosome filter."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="cow",
+            locus_group="protein-coding gene",
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/cow/locus_groups/cow_protein_coding_gene_chr_X.txt
+        assert "tsv/" in path
+        assert "cattle/" in path
+        assert "locus_groups/" in path
+        assert "chr_X.txt" in path
+
+
+class TestSpeciesNameNormalization:
+    """Tests for species name normalization to gender-neutral terms."""
+
+    def test_cow_normalizes_to_cattle(self) -> None:
+        """Test that 'cow' is normalized to 'cattle' in file paths."""
+        from vgnc_download_file_generator.models.file_spec import _normalize_species_name
+
+        # Test that the normalization function converts cow to cattle
+        normalized = _normalize_species_name("cow")
+        assert normalized == "cattle"
+
+    def test_cattle_remains_cattle(self) -> None:
+        """Test that 'cattle' remains 'cattle' (no double normalization)."""
+        from vgnc_download_file_generator.models.file_spec import _normalize_species_name
+
+        normalized = _normalize_species_name("cattle")
+        assert normalized == "cattle"
+
+    def test_cow_species_uses_cattle_in_path(self) -> None:
+        """Test that species named 'cow' uses 'cattle' in GCS path."""
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cow",
+            locus_group=None,
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Should use cattle in path, not cow
+        assert "cattle/" in path
+        assert "cow/" not in path
+        assert "cattle_vgnc_gene_set_chr_X.txt" in path
+
+    def test_cow_locus_type_uses_cattle_in_path(self) -> None:
+        """Test that cow species with locus type uses cattle in path."""
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cow",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Should use cattle in path, not cow
+        assert "cattle/" in path
+        assert "cow/" not in path
+        assert "cattle_gene_with_protein_product_All.json" in path

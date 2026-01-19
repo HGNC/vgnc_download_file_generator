@@ -163,35 +163,44 @@ class VgncEnsembl(BaseFileGenerator):
     def generate_json_rows(self) -> Generator[str]:
         """Generate JSON-formatted rows as strings.
 
-        Yields JSON lines one at a time for memory-efficient streaming.
-        Produces an array of objects with headers as keys.
+        Yields JSON objects one at a time for memory-efficient streaming.
+        Each yielded string is a JSON object. The caller is responsible
+        for wrapping in array brackets and adding commas.
 
         Yields:
-            Generator yielding JSON strings (opening bracket, objects with commas,
-            and closing bracket)
+            Generator yielding JSON object strings
         """
         # Get headers for field selection
         headers = self.get_headers("txt")
 
-        # Yield opening bracket
-        yield "["
-
         # Stream data rows and convert to JSON objects
-        first_object = True
         for chunk in self.stream_rows():
             for row_dict in chunk:
                 # Convert row dict to use only header fields
                 obj = {header: row_dict.get(header) for header in headers}
 
+                # Convert date objects to ISO format strings for JSON serialization
+                obj = self._serialize_dates(obj)
+
                 # Serialize the object to JSON
-                json_str = json.dumps(obj, ensure_ascii=False)
+                yield json.dumps(obj, ensure_ascii=False)
 
-                # Add comma before object if not the first
-                if not first_object:
-                    yield ","
+    def _serialize_dates(self, obj: dict[str, Any]) -> dict[str, Any]:
+        """Convert date objects to ISO format strings.
 
-                yield json_str
-                first_object = False
+        Args:
+            obj: Dictionary that may contain date objects
 
-        # Yield closing bracket
-        yield "]"
+        Returns:
+            Dictionary with dates converted to ISO format strings
+        """
+        from datetime import date
+
+        result = {}
+        for key, value in obj.items():
+            if isinstance(value, date):
+                # Convert date to ISO format string (YYYY-MM-DD)
+                result[key] = value.isoformat()
+            else:
+                result[key] = value
+        return result

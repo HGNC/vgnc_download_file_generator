@@ -62,6 +62,33 @@ def build_species_query(
     return query
 
 
+def build_species_display_name_query(taxon_id: int) -> TextClause:
+    """Build SQL query to get species display name by taxon_id.
+
+    Args:
+        taxon_id: Species taxonomy ID
+
+    Returns:
+        SQLAlchemy text construct with bind parameters for safe execution
+
+    Example:
+        >>> query = build_species_display_name_query(9913)
+        >>> cursor = conn.get_streaming_cursor()
+        >>> cursor.execute(query, {"taxon_id": 9913})
+        >>> result = cursor.fetchone()
+        >>> display_name = result[0] if result else None
+    """
+    sql = """
+        SELECT display_name
+        FROM species
+        WHERE taxon_id = :taxon_id
+    """
+
+    query = text(sql).bindparams(bindparam("taxon_id", value=taxon_id))
+
+    return query
+
+
 def build_gene_query(filters: dict[str, str | int | list[str]] | None = None) -> TextClause:
     """Build SQL query for gene data with complex JOINs and dynamic filtering.
 

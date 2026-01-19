@@ -12,23 +12,41 @@ def _normalize_species_name(name: str) -> str:
     """Normalize species name for use in file paths.
 
     Converts spaces to underscores while preserving special characters
-    like apostrophes.
+    like apostrophes. Also normalizes gender-specific terms to gender-neutral
+    equivalents (e.g., "cow" -> "cattle").
 
     Args:
         name: Raw species display name
 
     Returns:
-        Normalized species name with spaces replaced by underscores
+        Normalized species name with spaces replaced by underscores and
+        gender-specific terms converted to gender-neutral equivalents
 
     Examples:
         >>> _normalize_species_name("Bolivian squirrel monkey")
         'bolivian_squirrel_monkey'
         >>> _normalize_species_name("Mark's goat")
         "mark's_goat"
+        >>> _normalize_species_name("cow")
+        'cattle'
+        >>> _normalize_species_name("cattle")
+        'cattle'
     """
+    # Normalize gender-specific terms to gender-neutral equivalents
+    # This mapping converts common gender-specific species names to their
+    # gender-neutral forms for more inclusive file naming
+    gender_neutral_mapping = {
+        "cow": "cattle",
+    }
+
+    # Check if the name (case-insensitive) matches a gender-specific term
+    name_lower = name.lower()
+    if name_lower in gender_neutral_mapping:
+        return gender_neutral_mapping[name_lower]
+
     # Convert to lowercase and replace spaces with underscores
     # Keep special characters like apostrophes
-    return name.lower().replace(" ", "_")
+    return name_lower.replace(" ", "_")
 
 
 @dataclass(frozen=True)
@@ -79,6 +97,18 @@ class FileSpec:
             ... ).gcs_path()
             'json/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.json'
 
+            >>> # Chromosome-specific TSV file
+            >>> FileSpec(
+            ...     species_id=9593,
+            ...     species_name="Bolivian squirrel monkey",
+            ...     locus_group=None,
+            ...     locus_type=None,
+            ...     chromosome="X",
+            ...     file_type="vgnc_public",
+            ...     extension="txt",
+            ... ).gcs_path()
+            'tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.txt'
+
             >>> # Ensembl mapping file
             >>> FileSpec(
             ...     species_id="All",
@@ -91,7 +121,7 @@ class FileSpec:
             ... ).gcs_path()
             'ensembl/VGNC_to_Ensembl_mapping.txt'
 
-            >>> # Locus type-specific file
+            >>> # Locus type-specific JSON file
             >>> FileSpec(
             ...     species_id=9466,
             ...     species_name="cow",
@@ -107,29 +137,43 @@ class FileSpec:
         if self.file_type == "vgnc_ensembl" and self.species_id == "All":
             return "ensembl/VGNC_to_Ensembl_mapping.txt"
 
+        # Determine subdirectory based on file extension
+        subdir = "json" if self.extension == "json" else "tsv"
+
         normalized_name = _normalize_species_name(self.species_name)
 
         # Build path based on filter criteria
-        if self.chromosome is not None:
-            # Chromosome-specific file: json/{species}/{species}vgnc_gene_set_chr{chromosome}.{ext}
-            filename = f"{normalized_name}vgnc_gene_set_chr{self.chromosome}.{self.extension}"
-            return f"json/{normalized_name}/{filename}"
-
+        # Check locus_type first (highest priority)
         if self.locus_type is not None:
-            # Locus type-specific file: json/{species}/locus_types/{species}_{locus_type}_All.{ext}
             # Convert spaces to underscores for clean URLs
             locus_type_normalized = self.locus_type.replace(" ", "_")
-            filename = f"{normalized_name}_{locus_type_normalized}_All.{self.extension}"
-            return f"json/{normalized_name}/locus_types/{filename}"
+            if self.chromosome is not None:
+                # Locus type + chromosome: {species}_{locus_type}_chr_{chromosome}.{ext}
+                filename = f"{normalized_name}_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
+            else:
+                # Locus type all chromosomes: {species}_{locus_type}_All.{ext}
+                filename = f"{normalized_name}_{locus_type_normalized}_All.{self.extension}"
+            return f"{subdir}/{normalized_name}/locus_types/{filename}"
 
+        # Check locus_group next
         if self.locus_group is not None:
-            # Locus group-specific file: json/{species}/locus_groups/{species}_{locus_group}_All.{ext}
             # Convert spaces and hyphens to underscores for clean URLs
             locus_group_normalized = self.locus_group.replace(" ", "_").replace("-", "_")
-            filename = f"{normalized_name}_{locus_group_normalized}_All.{self.extension}"
-            return f"json/{normalized_name}/locus_groups/{filename}"
+            if self.chromosome is not None:
+                # Locus group + chromosome: {species}_{locus_group}_chr_{chromosome}.{ext}
+                filename = f"{normalized_name}_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
+            else:
+                # Locus group all chromosomes: {species}_{locus_group}_All.{ext}
+                filename = f"{normalized_name}_{locus_group_normalized}_All.{self.extension}"
+            return f"{subdir}/{normalized_name}/locus_groups/{filename}"
+
+        # Chromosome-only (no locus filter)
+        if self.chromosome is not None:
+            # Chromosome-specific file: {subdir}/{species}/{species}_vgnc_gene_set_chr_{chromosome}.{ext}
+            filename = f"{normalized_name}_vgnc_gene_set_chr_{self.chromosome}.{self.extension}"
+            return f"{subdir}/{normalized_name}/{filename}"
 
         # Default: species-specific file with no chromosome filter
         # This shouldn't normally happen in practice, but provide a sensible default
         filename = f"{normalized_name}_all.{self.extension}"
-        return f"json/{normalized_name}/{filename}"
+        return f"{subdir}/{normalized_name}/{filename}"

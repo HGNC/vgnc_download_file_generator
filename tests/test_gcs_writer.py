@@ -714,3 +714,94 @@ class TestErrorLogging:
 
         # Verify error was logged
         assert mock_logger.error.call_count >= 1
+
+
+class TestBackwardCompatibilityCopy:
+    """Tests for creating backward compatibility copies (symlinks)."""
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_creates_copy_from_cattle_to_cow_path(self, mock_storage) -> None:
+        """Test that a copy is created from cattle path to cow path for backward compatibility."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+
+        # Mock the source blob (cattle path)
+        source_blob = MagicMock()
+        mock_bucket.blob.return_value = source_blob
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        # Create backward compatibility copy
+        writer.create_backward_compatibility_copy(
+            source_path="tsv/cattle/cattle_vgnc_gene_set_chr_X.txt",
+            legacy_species="cow"
+        )
+
+        # Verify the destination blob (cow path) was created
+        expected_dest_path = "tsv/cow/cow_vgnc_gene_set_chr_X.txt"
+        mock_bucket.blob.assert_called_with(expected_dest_path)
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_copy_rewrites_cattle_path_to_cow_path(self, mock_storage) -> None:
+        """Test that the blob.copy_to method is called to create the copy."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+
+        source_blob = MagicMock()
+        dest_blob = MagicMock()
+
+        def blob_side_effect(path):
+            if "cattle" in path:
+                return source_blob
+            else:
+                return dest_blob
+
+        mock_bucket.blob.side_effect = blob_side_effect
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        writer.create_backward_compatibility_copy(
+            source_path="tsv/cattle/cattle_gene_with_protein_product_All.txt",
+            legacy_species="cow"
+        )
+
+        # Verify copy_to was called with the correct source path
+        source_blob.copy_to.assert_called_once()
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_handles_subdirectory_paths_correctly(self, mock_storage) -> None:
+        """Test that locus_types and locus_groups subdirectories are handled correctly."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+
+        source_blob = MagicMock()
+        dest_blob = MagicMock()
+
+        def blob_side_effect(path):
+            if "cattle" in path:
+                return source_blob
+            else:
+                return dest_blob
+
+        mock_bucket.blob.side_effect = blob_side_effect
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        writer.create_backward_compatibility_copy(
+            source_path="json/cattle/locus_types/cattle_gene_with_protein_product_All.json",
+            legacy_species="cow"
+        )
+
+        # Verify destination path was constructed correctly
+        expected_calls = [
+            "json/cattle/locus_types/cattle_gene_with_protein_product_All.json",
+            "json/cow/locus_types/cow_gene_with_protein_product_All.json"
+        ]
+        actual_calls = [call[0][0] for call in mock_bucket.blob.call_args_list]
+        assert actual_calls == expected_calls

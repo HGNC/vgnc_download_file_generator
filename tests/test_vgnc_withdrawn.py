@@ -1,5 +1,6 @@
 """Tests for VgncWithdrawn generator."""
 
+import json
 from unittest.mock import MagicMock
 
 from vgnc_download_file_generator.database.connection import DatabaseConnection
@@ -221,10 +222,18 @@ class TestVgncWithdrawnGenerateJson:
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
 
-        # Generate JSON rows
-        json_lines = list(generator.generate_json_rows())
+        # Generate JSON rows (now yields only JSON objects)
+        json_objects = list(generator.generate_json_rows())
 
-        # Should have opening bracket, data, and closing bracket
-        assert len(json_lines) >= 2
-        assert json_lines[0] == "["
-        assert json_lines[-1] == "]"
+        # Should have at least one JSON object
+        assert len(json_objects) >= 1
+
+        # Each line should be a valid JSON object
+        for json_str in json_objects:
+            obj = json.loads(json_str)
+            assert isinstance(obj, dict)
+
+        # Can wrap in brackets to make valid JSON array
+        full_json = "[" + ",".join(json_objects) + "]"
+        parsed = json.loads(full_json)
+        assert isinstance(parsed, list)

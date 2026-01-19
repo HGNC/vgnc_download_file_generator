@@ -282,8 +282,8 @@ vgnc-generator --species 9913 --chromosome X --formats tsv
 # Or use python module syntax
 uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv
 
-# Verify output in GCS
-gsutil ls gs://your-bucket-name/json/cow/
+# Verify output in GCS (TSV files are in tsv/ directory)
+gsutil ls gs://your-bucket-name/tsv/cow/
 ```
 
 ## Development Setup

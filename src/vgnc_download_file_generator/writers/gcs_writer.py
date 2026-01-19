@@ -257,3 +257,34 @@ class GCSStreamWriter:
             source_path: Path to the local file to upload
         """
         blob.upload_from_filename(source_path)
+
+    def create_backward_compatibility_copy(self, source_path: str, legacy_species: str) -> None:
+        """Create a backward compatibility copy from new path to legacy species path.
+
+        This method creates a copy of a file from its new location (e.g., with "cattle")
+        to the legacy location (e.g., with "cow") for backward compatibility.
+
+        Args:
+            source_path: The source file path (e.g., "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt")
+            legacy_species: The legacy species name to replace in the path (e.g., "cow")
+
+        Example:
+            >>> writer = GCSStreamWriter("my-bucket", "my-project")
+            >>> writer.create_backward_compatibility_copy(
+            ...     "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt",
+            ...     "cow"
+            ... )
+            # Creates copy at: tsv/cow/cow_vgnc_gene_set_chr_X.txt
+        """
+        # Replace all occurrences of the normalized species name in the path
+        # with the legacy species name
+        dest_path = source_path.replace("/cattle/", f"/{legacy_species}/")
+        dest_path = dest_path.replace("cattle_", f"{legacy_species}_")
+
+        # Get source and destination blobs
+        source_blob = self._bucket.blob(source_path)
+        dest_blob = self._bucket.blob(dest_path)
+
+        # Copy the source blob to the destination (rewrite operation)
+        # This creates a backward compatibility link without using actual symlinks
+        source_blob.copy_to(dest_blob, timeout=300)

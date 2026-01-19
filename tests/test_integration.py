@@ -110,20 +110,21 @@ class TestVgncPublicGeneratorIntegration:
         species = SpeciesInfo(taxon_id=9913, display_name="cow", is_live="Y")
         generator = VgncPublic(real_database, species, chromosome="X")
 
-        rows = list(generator.generate_json_rows())
+        json_objects = list(generator.generate_json_rows())
 
-        # If we have data, it should be valid JSON array
-        if rows:
-            # First row should be opening bracket
-            assert rows[0] == "["
-            # Last row should be closing bracket
-            assert rows[-1] == "]"
-            # If we have data objects, they should be valid JSON
-            if len(rows) > 2:
-                # Second row should be a JSON object
-                first_obj = json.loads(rows[1].rstrip(","))
-                assert isinstance(first_obj, dict)
-                assert "vgnc_id" in first_obj or "symbol" in first_obj
+        # If we have data, it should be valid JSON objects
+        if json_objects:
+            # Each object should be valid JSON
+            for json_str in json_objects:
+                obj = json.loads(json_str)
+                assert isinstance(obj, dict)
+                assert "vgnc_id" in obj or "symbol" in obj
+
+            # Can wrap in brackets to make valid JSON array
+            full_json = "[" + ",".join(json_objects) + "]"
+            parsed = json.loads(full_json)
+            assert isinstance(parsed, list)
+            assert len(parsed) == len(json_objects)
 
 
 @pytest.mark.integration
@@ -201,12 +202,12 @@ class TestFileGenerationWorkflow:
         species = SpeciesInfo(taxon_id=9913, display_name="cow", is_live="Y")
         generator = VgncPublic(real_database, species, chromosome="X")
 
-        # Generate JSON content - already in array format
-        rows = list(generator.generate_json_rows())
+        # Generate JSON objects
+        json_objects = list(generator.generate_json_rows())
 
-        # Join the rows to create the complete JSON
-        if rows:
-            content = "\n".join(rows)
+        # Wrap in brackets to create the complete JSON
+        if json_objects:
+            content = "[" + ",".join(json_objects) + "]"
             data = json.loads(content)
             assert isinstance(data, list)
 
