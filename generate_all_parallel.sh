@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # VGNC Download File Generator - Parallel Batch Generation Script
 #
 # This script generates all VGNC download files using GNU parallel
@@ -43,6 +43,20 @@ VERSION="2.0.0"
 
 # Directory containing this script (for finding helper scripts)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Set DYLD_LIBRARY_PATH for MySQL client library on macOS
+# This is needed because the Python MySQLdb module needs to find libmysqlclient.21.dylib
+# This must be done before defining CLI_CMD so subprocesses inherit it
+if [[ "$(uname)" == "Darwin" ]]; then
+    # Try common MySQL installation paths
+    if [[ -f "/usr/local/mysql-8.0.42-macos15-arm64/lib/libmysqlclient.21.dylib" ]]; then
+        export DYLD_LIBRARY_PATH="/usr/local/mysql-8.0.42-macos15-arm64/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    elif [[ -f "/opt/homebrew/opt/mysql-client/lib/libmysqlclient.21.dylib" ]]; then
+        export DYLD_LIBRARY_PATH="/opt/homebrew/opt/mysql-client/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    elif [[ -f "/usr/local/mysql/lib/libmysqlclient.21.dylib" ]]; then
+        export DYLD_LIBRARY_PATH="/usr/local/mysql/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    fi
+fi
 
 # CLI command (use full path or alias)
 if [[ -n "${VGNC_CLI:-}" ]]; then
@@ -559,8 +573,16 @@ log_info "Starting parallel execution..."
 log_info "Job log: ${JOB_LOG}"
 echo ""
 
+# Export a function that can execute the CLI with the job arguments
+export -f run_cli_job 2>/dev/null || true
+run_cli_job() {
+    eval "${CLI_CMD} $1"
+}
+export -f run_cli_job
+
 set +e  # Don't exit on error with parallel
-eval "${PARALLEL_CMD}" "${CLI_CMD} {1}" :::: "${JOB_FILE}"
+# Use the wrapper script to execute jobs with proper DYLD_LIBRARY_PATH and argument handling
+eval "${PARALLEL_CMD}" "${SCRIPT_DIR}/run_cli_job.sh {1}" :::: "${JOB_FILE}"
 PARALLEL_EXIT_CODE=$?
 set -e
 
