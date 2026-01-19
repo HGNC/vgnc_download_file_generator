@@ -1,0 +1,338 @@
+"""Tests for split query architecture.
+
+Tests the new approach of splitting the complex build_gene_query into
+multiple simpler queries and merging results in Python.
+"""
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from vgnc_download_file_generator.database.queries_split import (
+    build_gene_data_query,
+    build_xrefs_query,
+    build_aliases_query,
+    build_dates_query,
+    merge_gene_results,
+)
+from sqlalchemy.sql.expression import TextClause
+
+
+class TestBuildGeneDataQuery:
+    """Tests for build_gene_data_query - main gene core data query."""
+
+    def test_returns_text_clause(self) -> None:
+        """Test that the query returns a SQLAlchemy TextClause."""
+        query = build_gene_data_query(filters=None)
+        assert isinstance(query, TextClause)
+
+    def test_basic_query_structure(self) -> None:
+        """Test that the query has correct basic structure."""
+        query = build_gene_data_query(filters=None)
+        sql = query.text
+
+        # Should select from genefam
+        assert "FROM genefam gf" in sql
+
+        # Should have core JOINs
+        assert "LEFT JOIN gene_status gs" in sql
+        assert "LEFT JOIN gene_has_location ghl" in sql
+        assert "LEFT JOIN gene_location gl" in sql
+        assert "LEFT JOIN chromosomes c" in sql
+
+        # Should NOT have xref JOINs (those are in separate query)
+        assert "gene_has_xrefs" not in sql
+
+    def test_taxon_id_filter(self) -> None:
+        """Test taxon_id filter is applied correctly."""
+        query = build_gene_data_query(filters={"taxon_id": 9913})
+        sql = query.text
+
+        # Should have WHERE clause
+        assert "gf.taxon_id" in sql
+        assert ":taxon_id" in sql
+
+    def test_chromosome_filter(self) -> None:
+        """Test chromosome filter is applied correctly."""
+        query = build_gene_data_query(filters={"chromosome": "X"})
+        sql = query.text
+
+        assert "c.display_name" in sql
+        assert ":chromosome" in sql
+
+    def test_locus_type_filter(self) -> None:
+        """Test locus_type filter is applied correctly."""
+        query = build_gene_data_query(filters={"locus_type": "gene with protein product"})
+        sql = query.text
+
+        assert "lt.type" in sql
+
+    def test_locus_group_filter(self) -> None:
+        """Test locus_group filter is applied correctly."""
+        query = build_gene_data_query(filters={"locus_group": "protein-coding gene"})
+        sql = query.text
+
+        assert "lg.name" in sql
+
+    def test_status_filter_single_value(self) -> None:
+        """Test status filter with single value."""
+        query = build_gene_data_query(filters={"status": "Approved"})
+        sql = query.text
+
+        assert "gs.status" in sql
+
+    def test_status_filter_multiple_values(self) -> None:
+        """Test status filter with multiple values (IN clause)."""
+        query = build_gene_data_query(filters={"status": ["Approved", "Entry Withdrawn"]})
+        sql = query.text
+
+        # Should use IN clause for multiple values
+        assert "IN" in sql
+
+
+class TestBuildXrefsQuery:
+    """Tests for build_xrefs_query - external database references."""
+
+    def test_returns_text_clause(self) -> None:
+        """Test that the query returns a SQLAlchemy TextClause."""
+        query = build_xrefs_query()
+        assert isinstance(query, TextClause)
+
+    def test_returns_all_xref_columns(self) -> None:
+        """Test that all 6 xref types are in the query."""
+        query = build_xrefs_query()
+        sql = query.text
+
+        # Should have all 6 xref types
+        assert "ncbi_gene_id" in sql
+        assert "ensembl_gene_id" in sql
+        assert "uniprot_ids" in sql
+        assert "pubmed_id" in sql
+        assert "hgnc_orthologs" in sql
+        assert "bgd_id" in sql
+
+    def test_uses_conditional_aggregation(self) -> None:
+        """Test that query uses conditional aggregation pattern."""
+        query = build_xrefs_query()
+        sql = query.text
+
+        # Should use CASE WHEN or MAX with conditional logic
+        assert "CASE" in sql or "MAX" in sql
+
+    def test_groups_by_genefam_id(self) -> None:
+        """Test that query groups by genefam_id."""
+        query = build_xrefs_query()
+        sql = query.text
+
+        assert "GROUP BY" in sql
+        assert "genefam_id" in sql
+
+    def test_filters_by_genefam_ids(self) -> None:
+        """Test that query filters by genefam_id list."""
+        query = build_xrefs_query(genefam_ids=[1, 2, 3])
+        sql = query.text
+
+        # Should have IN clause for genefam_ids
+        assert "IN" in sql
+
+
+class TestBuildAliasesQuery:
+    """Tests for build_aliases_query - GROUP_CONCAT for aliases."""
+
+    def test_returns_text_clause(self) -> None:
+        """Test that the query returns a SQLAlchemy TextClause."""
+        query = build_aliases_query()
+        assert isinstance(query, TextClause)
+
+    def test_returns_all_alias_columns(self) -> None:
+        """Test that all 4 alias types are in the query."""
+        query = build_aliases_query()
+        sql = query.text
+
+        assert "alias_symbol" in sql
+        assert "alias_name" in sql
+        assert "prev_symbol" in sql
+        assert "prev_name" in sql
+
+    def test_uses_group_concat(self) -> None:
+        """Test that query uses GROUP_CONCAT."""
+        query = build_aliases_query()
+        sql = query.text
+
+        assert "GROUP_CONCAT" in sql
+
+    def test_groups_by_genefam_id(self) -> None:
+        """Test that query groups by genefam_id."""
+        query = build_aliases_query()
+        sql = query.text
+
+        assert "GROUP BY" in sql
+        assert "genefam_id" in sql
+
+    def test_filters_by_genefam_ids(self) -> None:
+        """Test that query filters by genefam_id list."""
+        query = build_aliases_query(genefam_ids=[1, 2, 3])
+        sql = query.text
+
+        assert "IN" in sql
+
+
+class TestBuildDatesQuery:
+    """Tests for build_dates_query - date MIN/MAX aggregates."""
+
+    def test_returns_text_clause(self) -> None:
+        """Test that the query returns a SQLAlchemy TextClause."""
+        query = build_dates_query()
+        assert isinstance(query, TextClause)
+
+    def test_returns_all_date_columns(self) -> None:
+        """Test that all 4 date fields are in the query."""
+        query = build_dates_query()
+        sql = query.text
+
+        assert "date_approved_reserved" in sql
+        assert "date_modified" in sql
+        assert "date_symbol_changed" in sql
+        assert "date_name_changed" in sql
+
+    def test_uses_min_max_aggregation(self) -> None:
+        """Test that query uses MIN/MAX aggregation."""
+        query = build_dates_query()
+        sql = query.text
+
+        assert "MIN" in sql or "MAX" in sql
+
+    def test_groups_by_genefam_id(self) -> None:
+        """Test that query groups by genefam_id."""
+        query = build_dates_query()
+        sql = query.text
+
+        assert "GROUP BY" in sql
+        assert "genefam_id" in sql
+
+    def test_filters_by_genefam_ids(self) -> None:
+        """Test that query filters by genefam_id list."""
+        query = build_dates_query(genefam_ids=[1, 2, 3])
+        sql = query.text
+
+        assert "IN" in sql
+
+
+class TestMergeGeneResults:
+    """Tests for merge_gene_results - Python-side merge logic."""
+
+    def test_merges_single_row_perfect_match(self) -> None:
+        """Test merging when all queries return matching data."""
+        # Query 1: Main gene data
+        gene_data = [
+            {"genefam_id": 1, "assigned_symbol": "GENE1", "taxon_id": 9913}
+        ]
+
+        # Query 2: Xrefs
+        xrefs = [
+            {"genefam_id": 1, "ncbi_gene_id": "12345", "ensembl_gene_id": "ENSBTAG0000001"}
+        ]
+
+        # Query 3: Aliases
+        aliases = [
+            {"genefam_id": 1, "alias_symbol": "ALIAS1|ALIAS2", "prev_symbol": "OLD1"}
+        ]
+
+        # Query 4: Dates
+        dates = [
+            {"genefam_id": 1, "date_approved_reserved": "2020-01-01", "date_modified": "2024-01-01"}
+        ]
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert len(result) == 1
+        assert result[0]["genefam_id"] == 1
+        assert result[0]["assigned_symbol"] == "GENE1"
+        assert result[0]["ncbi_gene_id"] == "12345"
+        assert result[0]["alias_symbol"] == "ALIAS1|ALIAS2"
+        assert result[0]["date_approved_reserved"] == "2020-01-01"
+
+    def test_handles_missing_xrefs(self) -> None:
+        """Test that missing xrefs result in None/empty values."""
+        gene_data = [{"genefam_id": 1, "assigned_symbol": "GENE1"}]
+        xrefs = []  # No xrefs
+        aliases = [{"genefam_id": 1, "alias_symbol": ""}]
+        dates = [{"genefam_id": 1, "date_approved_reserved": "2020-01-01"}]
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert result[0]["genefam_id"] == 1
+        # Xref fields should be None or empty
+        assert result[0].get("ncbi_gene_id") is None or result[0].get("ncbi_gene_id") == ""
+
+    def test_handles_missing_aliases(self) -> None:
+        """Test that missing aliases result in None/empty values."""
+        gene_data = [{"genefam_id": 1, "assigned_symbol": "GENE1"}]
+        xrefs = [{"genefam_id": 1, "ncbi_gene_id": "12345"}]
+        aliases = []  # No aliases
+        dates = [{"genefam_id": 1, "date_approved_reserved": "2020-01-01"}]
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert result[0]["genefam_id"] == 1
+        # Alias fields should be None or empty
+        assert result[0].get("alias_symbol") is None or result[0].get("alias_symbol") == ""
+
+    def test_handles_missing_dates(self) -> None:
+        """Test that missing dates result in None/empty values."""
+        gene_data = [{"genefam_id": 1, "assigned_symbol": "GENE1"}]
+        xrefs = [{"genefam_id": 1, "ncbi_gene_id": "12345"}]
+        aliases = [{"genefam_id": 1, "alias_symbol": ""}]
+        dates = []  # No dates
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert result[0]["genefam_id"] == 1
+        # Date fields should be None or empty
+        assert result[0].get("date_approved_reserved") is None or result[0].get("date_approved_reserved") == ""
+
+    def test_preserves_all_gene_data_rows(self) -> None:
+        """Test that all rows from gene_data are preserved."""
+        gene_data = [
+            {"genefam_id": 1, "assigned_symbol": "GENE1"},
+            {"genefam_id": 2, "assigned_symbol": "GENE2"},
+            {"genefam_id": 3, "assigned_symbol": "GENE3"},
+        ]
+        xrefs = [{"genefam_id": 1, "ncbi_gene_id": "12345"}]
+        aliases = [{"genefam_id": 2, "alias_symbol": "ALIAS2"}]
+        dates = [{"genefam_id": 3, "date_approved_reserved": "2020-01-01"}]
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert len(result) == 3
+        assert result[0]["assigned_symbol"] == "GENE1"
+        assert result[1]["assigned_symbol"] == "GENE2"
+        assert result[2]["assigned_symbol"] == "GENE3"
+
+    def test_returns_iterator(self) -> None:
+        """Test that merge_gene_results returns an iterator."""
+        from collections.abc import Iterator
+
+        gene_data = [{"genefam_id": 1, "assigned_symbol": "GENE1"}]
+        xrefs = [{"genefam_id": 1}]
+        aliases = [{"genefam_id": 1}]
+        dates = [{"genefam_id": 1}]
+
+        result = merge_gene_results(gene_data, xrefs, aliases, dates)
+        assert isinstance(result, Iterator)
+
+    def test_efficient_dict_lookup(self) -> None:
+        """Test that merge uses efficient dict lookups (not nested loops)."""
+        # This is a performance test - we can't directly test implementation,
+        # but we can verify it handles larger datasets quickly
+        gene_data = [{"genefam_id": i, "assigned_symbol": f"GENE{i}"} for i in range(1, 101)]
+        xrefs = [{"genefam_id": i, "ncbi_gene_id": str(i)} for i in range(1, 101, 2)]  # Every other gene
+        aliases = [{"genefam_id": i, "alias_symbol": f"ALIAS{i}"} for i in range(1, 101, 3)]  # Every 3rd gene
+        dates = [{"genefam_id": i, "date_approved_reserved": "2020-01-01"} for i in range(1, 101, 5)]  # Every 5th gene
+
+        result = list(merge_gene_results(gene_data, xrefs, aliases, dates))
+
+        assert len(result) == 100
+        # Spot check a few
+        assert result[0]["assigned_symbol"] == "GENE1"
+        assert result[99]["assigned_symbol"] == "GENE100"

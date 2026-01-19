@@ -74,7 +74,7 @@ class VgncEnsembl(BaseFileGenerator):
         """Stream rows from the database in chunks.
 
         Filters for 'Approved' status genes only.
-        Joins with xref tables to fetch Ensembl Gene ID data.
+        Uses split query architecture for performance.
 
         Args:
             chunk_size: Number of rows to fetch per batch (default: 5000)
@@ -82,6 +82,16 @@ class VgncEnsembl(BaseFileGenerator):
         Yields:
             Iterator of lists, where each list contains chunk_size dictionaries
         """
+        # Import split query functions
+        from vgnc_download_file_generator.database.queries_split import (
+            build_gene_data_query,
+            build_xrefs_query,
+            build_aliases_query,
+            build_dates_query,
+            merge_gene_results,
+        )
+        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
+
         # Build filters for the query - Approved status only
         filters: dict[str, str | int | list[str]] = {"status": "Approved"}
 
@@ -101,37 +111,81 @@ class VgncEnsembl(BaseFileGenerator):
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
-        # Build the query with Approved status filter
-        query = build_gene_query(filters=filters)
-
-        # Get streaming cursor from database
-        cursor = self.db.get_streaming_cursor()
-
-        # Compile query for MySQLdb and execute
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
-
-        sql, params = compile_query_for_mysql(query)
-        cursor.execute(sql, params)
-
-        # Get column names from cursor description
-        # cursor.description is a sequence of (name, type_code, ...) tuples
-        db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-
         # Create mapping from database column names to standard headers
         column_map = self._get_column_map()
 
-        # Map database headers to standard headers and stream rows
-        for chunk in stream_gene_data(cursor, db_headers, chunk_size):
-            # Convert each row dict to use standard header names
-            mapped_chunk = []
-            for row_dict in chunk:
-                mapped_dict = {}
-                for db_col, value in row_dict.items():
-                    # Map database column to standard header
-                    standard_header = column_map.get(db_col, db_col)
-                    mapped_dict[standard_header] = value
-                mapped_chunk.append(mapped_dict)
-            yield mapped_chunk
+        # Execute Query 1: Main gene data
+        gene_query = build_gene_data_query(filters=filters if filters else None)
+        cursor = self.db.get_streaming_cursor()
+        gene_sql, gene_params = compile_query_for_mysql(gene_query)
+        cursor.execute(gene_sql, gene_params)
+
+        # Fetch all gene data
+        db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        gene_data_raw = []
+
+        for row in cursor:
+            row_dict = dict(zip(db_headers, row))
+            gene_data_raw.append(row_dict)
+
+        cursor.close()
+
+        # If no gene data, return empty iterator
+        if not gene_data_raw:
+            return
+
+        # Extract genefam_ids for the other queries
+        genefam_ids = [row["genefam_id"] for row in gene_data_raw]
+
+        # Execute Query 2: Xrefs
+        xrefs_query = build_xrefs_query(genefam_ids=genefam_ids)
+        cursor = self.db.get_cursor()
+        xrefs_sql, xrefs_params = compile_query_for_mysql(xrefs_query)
+        cursor.execute(xrefs_sql, xrefs_params)
+        xrefs_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        xrefs = [dict(zip(xrefs_db_headers, row)) for row in cursor]
+        cursor.close()
+
+        # Execute Query 3: Aliases
+        aliases_query = build_aliases_query(genefam_ids=genefam_ids)
+        cursor = self.db.get_cursor()
+        aliases_sql, aliases_params = compile_query_for_mysql(aliases_query)
+        cursor.execute(aliases_sql, aliases_params)
+        aliases_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        aliases = [dict(zip(aliases_db_headers, row)) for row in cursor]
+        cursor.close()
+
+        # Execute Query 4: Dates
+        dates_query = build_dates_query(genefam_ids=genefam_ids)
+        cursor = self.db.get_cursor()
+        dates_sql, dates_params = compile_query_for_mysql(dates_query)
+        cursor.execute(dates_sql, dates_params)
+        dates_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        dates = [dict(zip(dates_db_headers, row)) for row in cursor]
+        cursor.close()
+
+        # Merge all results
+        merged_results = merge_gene_results(gene_data_raw, xrefs, aliases, dates)
+
+        # Stream merged results in chunks
+        chunk: list[dict[str, Any]] = []
+        for merged_row in merged_results:
+            # Map database column names to standard headers
+            mapped_dict = {}
+            for db_col, value in merged_row.items():
+                standard_header = column_map.get(db_col, db_col)
+                mapped_dict[standard_header] = value
+
+            chunk.append(mapped_dict)
+
+            # Yield chunk when it reaches chunk_size
+            if len(chunk) >= chunk_size:
+                yield chunk
+                chunk = []
+
+        # Yield final partial chunk
+        if chunk:
+            yield chunk
 
     def generate_tsv_rows(self) -> Generator[str]:
         """Generate TSV-formatted rows as strings.

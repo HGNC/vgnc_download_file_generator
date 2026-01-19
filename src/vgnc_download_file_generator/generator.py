@@ -66,7 +66,7 @@ class BaseFileGenerator(ABC):
 
     @abstractmethod
     def stream_rows(
-        self, chunk_size: int = 5000
+        self, chunk_size: int = 5000, use_streaming: bool = True
     ) -> Iterator[list[dict[str, Any]]]:
         """Stream rows from the database in chunks.
 
@@ -75,6 +75,8 @@ class BaseFileGenerator(ABC):
 
         Args:
             chunk_size: Number of rows to fetch per batch (default: 5000)
+            use_streaming: If True, use server-side cursor for large result sets.
+                        If False, use regular cursor for smaller, faster queries.
 
         Yields:
             Iterator of lists, where each list contains chunk_size dictionaries

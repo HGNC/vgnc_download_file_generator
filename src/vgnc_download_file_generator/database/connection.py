@@ -109,8 +109,8 @@ class DatabaseConnection:
             db=self.config.dbname,
             port=self.config.dbport,
             connect_timeout=30,
-            read_timeout=300,
-            write_timeout=300,
+            read_timeout=600,
+            write_timeout=600,
         )
 
     def _create_pool(self) -> QueuePool:
@@ -123,11 +123,11 @@ class DatabaseConnection:
             self._create_connection,  # type: ignore[arg-type]
             pool_size=5,
             max_overflow=0,
-            recycle=300,
+            recycle=60,  # Recycle connections after 60 seconds to prevent stale connections
             reset_on_return=True,
         )
         logger.info(
-            "Initialized connection pool with pool_size=5, recycle=300, reset_on_return=True"
+            "Initialized connection pool with pool_size=5, recycle=60, reset_on_return=True"
         )
         return pool
 
@@ -165,6 +165,14 @@ class DatabaseConnection:
         Raises:
             MySQLdb.OperationalError: If connection fails
         """
+        import os
+
+        # Check if we should use regular cursor instead (based on env var)
+        env_val = os.environ.get("VGNC_USE_STREAMING_CURSOR", "true").lower()
+        if env_val not in ("true", "1", "yes"):
+            logger.info("VGNC_USE_STREAMING_CURSOR is false, using regular cursor instead of streaming cursor")
+            return self.get_cursor()
+
         conn = self.get_connection()
         cursor = conn.cursor(MySQLdb.cursors.SSCursor)
         logger.info("Created server-side cursor for streaming")
@@ -186,6 +194,24 @@ class DatabaseConnection:
         cursor = conn.cursor()
         logger.info("Created regular cursor")
         return cursor
+
+    def get_cursor_or_streaming(self, use_streaming: bool = True) -> Any:
+        """Get either a streaming cursor or regular cursor based on the use_streaming parameter.
+
+        Args:
+            use_streaming: If True, returns a server-side cursor for large result sets.
+                        If False, returns a regular cursor for smaller, faster queries.
+
+        Returns:
+            MySQLdb.SSCursor or MySQLdb.Cursor instance
+
+        Raises:
+            MySQLdb.OperationalError: If connection fails
+        """
+        if use_streaming:
+            return self.get_streaming_cursor()
+        else:
+            return self.get_cursor()
 
     def __enter__(self) -> "DatabaseConnection":
         """Enter context manager and establish connection.

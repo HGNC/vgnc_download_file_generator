@@ -25,7 +25,10 @@ class TestVgncPublicStreamRows:
 
         # Mock the streaming cursor
         mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]  # Empty result
+        # Use a list with empty list as side_effect - returns empty list on first call,
+        # then raises StopIteration which the while loop in stream_gene_data handles
+        mock_cursor.fetchmany.side_effect = [[]]
+        mock_cursor.description = []  # Mock empty cursor description
         db.get_streaming_cursor.return_value = mock_cursor
 
         # Stream rows (should be empty due to mocking)
@@ -49,7 +52,9 @@ class TestVgncPublicStreamRows:
 
         # Mock the streaming cursor
         mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
+        # Return empty list to signal end of result set
+        mock_cursor.fetchmany.side_effect = [[]]
+        mock_cursor.description = []
         db.get_streaming_cursor.return_value = mock_cursor
 
         # Stream rows
@@ -78,7 +83,9 @@ class TestVgncPublicStreamRows:
 
         # Mock the streaming cursor
         mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
+        # Return empty list to signal end of result set
+        mock_cursor.fetchmany.side_effect = [[]]
+        mock_cursor.description = []
         db.get_streaming_cursor.return_value = mock_cursor
 
         # Stream rows
@@ -105,17 +112,38 @@ class TestVgncPublicStreamRows:
             locus_type=None,
         )
 
-        # Mock the streaming cursor to return test data
-        mock_cursor = MagicMock()
-        # Return 5 rows, then 3 rows, then empty
-        mock_cursor.fetchmany.side_effect = [
-            [("row1",), ("row2",), ("row3",), ("row4",), ("row5",)],
-            [("row6",), ("row7",), ("row8",)],
-            [],
-        ]
-        # Mock cursor.description to provide column names
-        mock_cursor.description = [("col1",), ("col2",)]
-        db.get_streaming_cursor.return_value = mock_cursor
+        # Mock the split query approach
+        # Query 1: Main gene data (returns 8 rows)
+        gene_cursor = MagicMock()
+        gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
+        gene_cursor.__iter__ = lambda self: iter([
+            (1, "GENE1"),
+            (2, "GENE2"),
+            (3, "GENE3"),
+            (4, "GENE4"),
+            (5, "GENE5"),
+            (6, "GENE6"),
+            (7, "GENE7"),
+            (8, "GENE8"),
+        ])
+
+        # Queries 2-4: Return empty results
+        empty_cursor = MagicMock()
+        empty_cursor.description = []
+        empty_cursor.__iter__ = lambda self: iter([])
+
+        # Configure mock to return different cursers for each call
+        # get_streaming_cursor for gene data, get_cursor for other queries
+        call_count = [0]
+        def get_cursor_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:  # First call - gene data query
+                return gene_cursor
+            else:  # Subsequent calls - xrefs, aliases, dates
+                return empty_cursor
+
+        db.get_streaming_cursor.return_value = gene_cursor
+        db.get_cursor.side_effect = get_cursor_side_effect
 
         # Stream rows with chunk_size=5
         chunks = list(generator.stream_rows(chunk_size=5))
@@ -142,17 +170,32 @@ class TestVgncPublicStreamRows:
             locus_type=None,
         )
 
-        # Mock empty result
-        mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
-        db.get_streaming_cursor.return_value = mock_cursor
+        # Mock empty result for split queries
+        gene_cursor = MagicMock()
+        gene_cursor.description = []
+        gene_cursor.__iter__ = lambda self: iter([])
+
+        empty_cursor = MagicMock()
+        empty_cursor.description = []
+        empty_cursor.__iter__ = lambda self: iter([])
+
+        call_count = [0]
+        def get_cursor_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return gene_cursor
+            else:
+                return empty_cursor
+
+        db.get_streaming_cursor.return_value = gene_cursor
+        db.get_cursor.side_effect = get_cursor_side_effect
 
         result = generator.stream_rows()
 
         assert isinstance(result, Iterator)
 
-    def test_uses_stream_gene_data_utility(self) -> None:
-        """Test that stream_rows uses stream_gene_data utility."""
+    def test_uses_split_queries(self) -> None:
+        """Test that stream_rows uses split query architecture."""
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
 
@@ -164,17 +207,33 @@ class TestVgncPublicStreamRows:
             locus_type=None,
         )
 
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
-        mock_cursor.description = [("col1",)]
-        db.get_streaming_cursor.return_value = mock_cursor
+        # Mock split query responses
+        gene_cursor = MagicMock()
+        gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
+        gene_cursor.__iter__ = lambda self: iter([(1, "GENE1")])
 
-        # Stream rows with custom chunk_size
+        empty_cursor = MagicMock()
+        empty_cursor.description = []
+        empty_cursor.__iter__ = lambda self: iter([])
+
+        # Track which cursors were called
+        calls = []
+        def get_streaming_cursor_side_effect():
+            calls.append("get_streaming_cursor")
+            return gene_cursor
+
+        def get_cursor_side_effect():
+            calls.append("get_cursor")
+            return empty_cursor
+
+        db.get_streaming_cursor.side_effect = get_streaming_cursor_side_effect
+        db.get_cursor.side_effect = get_cursor_side_effect
+
+        # Stream rows
         list(generator.stream_rows(chunk_size=1000))
 
-        # Verify fetchmany was called with chunk_size
-        mock_cursor.fetchmany.assert_called()
-        # Should have been called with our custom chunk_size
-        for call_item in mock_cursor.fetchmany.call_args_list:
-            assert call_item[0][0] == 1000
+        # Verify split query pattern:
+        # 1 get_streaming_cursor call for gene data
+        # 3 get_cursor calls for xrefs, aliases, dates
+        assert calls.count("get_streaming_cursor") == 1
+        assert calls.count("get_cursor") == 3
