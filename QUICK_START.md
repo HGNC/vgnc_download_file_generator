@@ -14,16 +14,33 @@ Before you begin, ensure you have:
 
 ## 1. Install the Application
 
+**Option A: Quick setup with the setup script (recommended)**
+
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd vgnc_download_file_generator
 
+# Run the setup script
+./setup.sh
+```
+
+The setup script will:
+- Install Python dependencies via `uv sync`
+- Check for and optionally install GNU parallel
+
+**Option B: Manual setup**
+
+```bash
 # Install dependencies (recommended: uv)
 uv sync
 
 # Or with pip
 pip install -e .
+
+# Install GNU parallel manually (optional, for parallel batch generation)
+brew install parallel  # macOS
+sudo apt-get install parallel  # Ubuntu/Debian
 ```
 
 ## 2. Configure Environment
@@ -140,6 +157,73 @@ vgnc-download-file-generator --species 9913 --locus-type "gene with protein prod
 # All withdrawn entries
 vgnc-download-file-generator --species All --file-type vgnc_withdrawn --formats tsv
 ```
+
+## Batch Generation (Parallel Script)
+
+For generating multiple files efficiently, use the parallel batch script included with the project.
+
+### Install GNU Parallel
+
+The parallel script requires GNU parallel:
+
+```bash
+# macOS
+brew install parallel
+
+# Ubuntu/Debian
+sudo apt-get install parallel
+
+# CentOS/RHEL
+sudo yum install parallel
+```
+
+### Generate Multiple Files in Parallel
+
+```bash
+# Generate files for multiple species (auto-detects parallelism)
+./generate_all_parallel.sh --species "9913,9606,9598"
+
+# Control job count manually
+./generate_all_parallel.sh --species "9913,9606" --jobs 4
+
+# Specify chromosomes
+./generate_all_parallel.sh --species "9913" --chromosomes "1,2,X,Y"
+
+# Preview what would be generated
+./generate_all_parallel.sh --species "9913" --dry-run
+```
+
+### Parallel Script Features
+
+- **Auto-detection**: Automatically detects CPU cores and calculates optimal job count (cores - 2)
+- **Format splitting**: Creates separate jobs for TSV and JSON for better parallelization
+- **Retries**: 3 automatic retries on transient failures
+- **Progress tracking**: Real-time progress bar
+- **Job logging**: Creates timestamped job log files for tracking
+- **Continue on error**: Optional mode to continue processing after failures
+
+### Parallel Script Options
+
+| Option          | Description                              | Default                     |
+| --------------- | ---------------------------------------- | --------------------------- |
+| `--species`     | Comma-separated species taxon IDs        | None (required for species files) |
+| `--chromosomes` | Comma-separated chromosome list          | Auto-discover from database |
+| `--formats`     | Output formats                           | `tsv,json`                  |
+| `--jobs`        | Number of parallel jobs                  | Auto-detect (CPU cores - 2) |
+| `--timeout`     | Job timeout in seconds                   | `3600` (1 hour)            |
+| `--continue`    | Continue after retries exhausted         | Stop on failure            |
+| `--skip-withdrawn` | Skip withdrawn entries generation   | Generate withdrawn          |
+| `--skip-ensembl`   | Skip Ensembl mapping generation      | Generate Ensembl            |
+| `--dry-run`     | Show what would be generated             | Execute jobs                |
+
+### Recommended Settings
+
+For your target environments:
+
+| Environment       | CPUs  | Suggested Jobs | Command                          |
+| ----------------- | ----- | -------------- | -------------------------------- |
+| MacBook M4 Pro    | ~12   | 10             | `./generate_all_parallel.sh --species "9913,9606"` |
+| GCP 8 vCPU        | 8     | 6              | `./generate_all_parallel.sh --species "9913,9606" --jobs 6` |
 
 ## Command Line Options
 

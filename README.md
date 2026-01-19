@@ -2,7 +2,7 @@
 
 A Python tool for generating VGNC (Vertebrate Gene Nomenclature Consortium) download files and uploading them to Google Cloud Storage.
 
-[![Tests](https://img.shields.io/badge/tests-216%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-261%20passing-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)](#test-coverage)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -40,10 +40,12 @@ For detailed installation instructions, see the [Installation Guide](INSTALLATIO
 # Clone and install with uv (recommended)
 git clone <repository-url>
 cd vgnc_download_file_generator
-uv sync
 
-# Or with pip
-pip install -e .
+# Run setup script (installs Python deps + GNU parallel)
+./setup.sh
+
+# Or manually with uv sync
+uv sync
 ```
 
 **Requirements:**
@@ -115,6 +117,32 @@ vgnc-download-file-generator --species 9913 --locus-type "gene with protein prod
 # Dry run to see what would be generated
 vgnc-download-file-generator --species 9913 --chromosome X --dry-run
 ```
+
+### Batch Generation (Parallel)
+
+For generating multiple files efficiently, use the parallel batch script:
+
+```bash
+# Generate files for multiple species in parallel
+./generate_all_parallel.sh --species "9913,9606,9598"
+
+# Control parallelism (default: auto-detected from CPU cores)
+./generate_all_parallel.sh --species "9913,9606" --jobs 6
+
+# Preview what would be generated
+./generate_all_parallel.sh --species "9913" --dry-run
+```
+
+**Requirements:**
+- GNU parallel (install with `brew install parallel` on macOS or `sudo apt-get install parallel` on Linux)
+
+**Features:**
+- Auto-detects CPU cores for optimal parallelism
+- **Format splitting**: Creates separate jobs for TSV and JSON for better parallelization
+- 3 automatic retries on transient failures
+- Real-time progress bar
+- Job logging for failure tracking
+- Continue-on-error mode
 
 ### Python API
 
@@ -224,7 +252,7 @@ uv run ruff format src/
 
 ### Test Coverage
 
-Current coverage: **94%** (260 total tests: 216 unit + 28 integration + 16 E2E)
+Current coverage: **94%** (261 total tests: 217 unit + 28 integration + 16 E2E)
 
 ## File Formats
 

@@ -22,6 +22,7 @@ Detailed installation instructions for the VGNC Download File Generator.
 | Python | 3.13 | 3.13+ |
 | MySQL | 5.7+ | 8.0+ |
 | uv (optional) | Latest | Latest |
+| GNU parallel (optional) | Latest | Latest (for parallel batch script) |
 
 ### Operating Systems
 
@@ -37,7 +38,23 @@ Detailed installation instructions for the VGNC Download File Generator.
 
 ## Installation Methods
 
-### Method 1: Using uv (Recommended)
+### Method 1: Using setup.sh (Recommended)
+
+The setup script handles both Python dependencies and GNU parallel installation.
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd vgnc_download_file_generator
+
+# Run setup script
+./setup.sh
+
+# Skip GNU parallel installation if not needed
+./setup.sh --skip-parallel
+```
+
+### Method 2: Using uv
 
 `uv` is a fast Python package installer and resolver.
 
@@ -58,7 +75,7 @@ source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate     # Windows
 ```
 
-### Method 2: Using pip
+### Method 3: Using pip
 
 ```bash
 # Clone the repository
@@ -78,7 +95,7 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-### Method 3: Using Docker
+### Method 4: Using Docker
 
 ```bash
 # Build the image
@@ -86,6 +103,34 @@ docker build -t vgnc-generator .
 
 # Run with environment file
 docker run --env-file .env vgnc-generator
+```
+
+### Optional: GNU Parallel (for Batch Generation)
+
+The `generate_all_parallel.sh` script requires GNU parallel for efficient parallel file generation:
+
+```bash
+# macOS
+brew install parallel
+
+# Ubuntu/Debian
+sudo apt-get install parallel
+
+# CentOS/RHEL/Fedora
+sudo yum install parallel
+
+# From source
+wget https://ftpmirror.gnu.org/parallel/parallel-20240122.tar.bz2
+bzip2 -dc parallel-20240122.tar.bz2 | tar xvf -
+cd parallel-20240122
+./configure && make && make install
+```
+
+**Note**: On first run, GNU parallel may request citation acknowledgment. You can suppress this by creating `~/.parallel/will-cite`:
+
+```bash
+mkdir -p ~/.parallel
+touch ~/.parallel/will-cite
 ```
 
 ## Database Setup
