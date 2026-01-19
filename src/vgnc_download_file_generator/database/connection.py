@@ -98,12 +98,19 @@ class DatabaseConnection:
         Raises:
             MySQLdb.OperationalError: If connection fails
         """
+        # Add connection timeout to prevent indefinite hangs
+        # connect_timeout: Timeout for establishing the connection (seconds)
+        # read_timeout: Timeout for reading from the server (seconds)
+        # write_timeout: Timeout for writing to the server (seconds)
         return MySQLdb.connect(
             host=self.config.dbhost,
             user=self.config.dbuser,
             passwd=self.config.dbpasswd,
             db=self.config.dbname,
             port=self.config.dbport,
+            connect_timeout=30,
+            read_timeout=300,
+            write_timeout=300,
         )
 
     def _create_pool(self) -> QueuePool:
@@ -161,6 +168,23 @@ class DatabaseConnection:
         conn = self.get_connection()
         cursor = conn.cursor(MySQLdb.cursors.SSCursor)
         logger.info("Created server-side cursor for streaming")
+        return cursor
+
+    def get_cursor(self) -> Any:
+        """Get a regular cursor for faster query execution on smaller result sets.
+
+        Regular cursors are faster than server-side cursors for smaller result sets
+        because they fetch all results at once rather than buffering on the server.
+
+        Returns:
+            MySQLdb.Cursor instance for standard queries
+
+        Raises:
+            MySQLdb.OperationalError: If connection fails
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        logger.info("Created regular cursor")
         return cursor
 
     def __enter__(self) -> "DatabaseConnection":

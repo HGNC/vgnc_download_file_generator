@@ -15,6 +15,10 @@ from vgnc_download_file_generator.config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 
+# Default timeout for Secret Manager API calls (in seconds)
+# This prevents indefinite hangs if there are network issues
+DEFAULT_TIMEOUT = int(os.environ.get("GOOGLE_SECRET_MANAGER_TIMEOUT", "30"))
+
 
 class SecretManagerError(Exception):
     """Custom exception for Secret Manager errors.
@@ -66,14 +70,22 @@ def get_db_credentials(
 
     # Create client if not provided (useful for testing)
     if client is None:
-        client = secretmanager.SecretManagerServiceClient()
+        # Create client with timeout to prevent indefinite hangs
+        client = secretmanager.SecretManagerServiceClient(
+            client_options={
+                "api_endpoint": "secretmanager.googleapis.com",
+            },
+        )
 
     # Build the secret resource name
     secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
 
-    # Access the secret version with error handling
+    # Access the secret version with error handling and timeout
     try:
-        response = client.access_secret_version(name=secret_path)
+        response = client.access_secret_version(
+            name=secret_path,
+            timeout=DEFAULT_TIMEOUT,
+        )
     except gcp_exceptions.NotFound as e:
         logger.error("Secret not found: %s in project %s", secret_name, project_id, exc_info=True)
         raise SecretManagerError("Secret not found", secret_name, e) from e

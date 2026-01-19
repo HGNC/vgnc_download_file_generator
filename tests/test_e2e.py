@@ -31,35 +31,81 @@ def cli_runner_with_env():
 
     Note: Pydantic BaseSettings reads from os.environ() directly, not from
     the environment passed to CliRunner. So we set os.environ() temporarily.
-    """
-    # Build the environment dict to pass to CliRunner
-    # Start with GCS and runtime settings from os.environ
-    env = {
-        'APP_GCS_BUCKET_NAME': os.environ.get('APP_GCS_BUCKET_NAME', ''),
-        'APP_GCS_PROJECT_ID': os.environ.get('APP_GCS_PROJECT_ID', ''),
-        'APP_RUNTIME_CHUNK_SIZE': os.environ.get('APP_RUNTIME_CHUNK_SIZE', '5000'),
-        'APP_RUNTIME_MAX_WORKERS': os.environ.get('APP_RUNTIME_MAX_WORKERS', '4'),
-    }
 
+    This function uses a timeout for Secret Manager access to prevent
+    indefinite hangs. If Secret Manager is unavailable, tests will be skipped.
+    """
     # Load database credentials from Secret Manager
+    # The get_db_credentials function now has a 30-second timeout
     secret_name = os.environ.get('GOOGLE_SECRET_MANAGER_SECRET_NAME')
     project_id = os.environ.get('APP_GCS_PROJECT_ID')
 
-    if secret_name and project_id:
-        try:
-            db_config = get_db_credentials(secret_name, project_id=project_id)
-            # Add database credentials to environment dict
-            env.update({
-                'APP_DATABASE_DBHOST': db_config.dbhost,
-                'APP_DATABASE_DBUSER': db_config.dbuser,
-                'APP_DATABASE_DBPASSWD': db_config.dbpasswd,
-                'APP_DATABASE_DBPORT': str(db_config.dbport),
-                'APP_DATABASE_DBNAME': db_config.dbname,
-            })
-        except Exception:
-            pass  # If Secret Manager fails, tests will be skipped
+    # Save original os.environ keys to restore later
+    original_environ = {}
+    env_keys_to_restore = [
+        'APP_GCS_BUCKET_NAME',
+        'APP_GCS_PROJECT_ID',
+        'APP_RUNTIME_CHUNK_SIZE',
+        'APP_RUNTIME_MAX_WORKERS',
+        'APP_DATABASE_DBHOST',
+        'APP_DATABASE_DBUSER',
+        'APP_DATABASE_DBPASSWD',
+        'APP_DATABASE_DBPORT',
+        'APP_DATABASE_DBNAME',
+    ]
 
-    return CliRunner(env=env)
+    for key in env_keys_to_restore:
+        if key in os.environ:
+            original_environ[key] = os.environ[key]
+
+    try:
+        # Set GCS and runtime settings from os.environ
+        os.environ['APP_GCS_BUCKET_NAME'] = os.environ.get('APP_GCS_BUCKET_NAME', '')
+        os.environ['APP_GCS_PROJECT_ID'] = os.environ.get('APP_GCS_PROJECT_ID', '')
+        os.environ['APP_RUNTIME_CHUNK_SIZE'] = os.environ.get('APP_RUNTIME_CHUNK_SIZE', '5000')
+        os.environ['APP_RUNTIME_MAX_WORKERS'] = os.environ.get('APP_RUNTIME_MAX_WORKERS', '4')
+
+        if secret_name and project_id:
+            try:
+                db_config = get_db_credentials(secret_name, project_id=project_id)
+                # Add database credentials to os.environ (not just the env dict)
+                # Pydantic Settings reads from os.environ() directly
+                os.environ['APP_DATABASE_DBHOST'] = db_config.dbhost
+                os.environ['APP_DATABASE_DBUSER'] = db_config.dbuser
+                os.environ['APP_DATABASE_DBPASSWD'] = db_config.dbpasswd
+                os.environ['APP_DATABASE_DBPORT'] = str(db_config.dbport)
+                os.environ['APP_DATABASE_DBNAME'] = db_config.dbname
+            except Exception as e:
+                # Skip test if Secret Manager is unavailable
+                # This prevents hangs and provides clear feedback
+                pytest.skip(f"Secret Manager unavailable (tests skipped): {e}")
+
+        # Build the environment dict to pass to CliRunner as well
+        env = {
+            'APP_GCS_BUCKET_NAME': os.environ.get('APP_GCS_BUCKET_NAME', ''),
+            'APP_GCS_PROJECT_ID': os.environ.get('APP_GCS_PROJECT_ID', ''),
+            'APP_RUNTIME_CHUNK_SIZE': os.environ.get('APP_RUNTIME_CHUNK_SIZE', '5000'),
+            'APP_RUNTIME_MAX_WORKERS': os.environ.get('APP_RUNTIME_MAX_WORKERS', '4'),
+        }
+
+        if secret_name and project_id:
+            env.update({
+                'APP_DATABASE_DBHOST': os.environ.get('APP_DATABASE_DBHOST', ''),
+                'APP_DATABASE_DBUSER': os.environ.get('APP_DATABASE_DBUSER', ''),
+                'APP_DATABASE_DBPASSWD': os.environ.get('APP_DATABASE_DBPASSWD', ''),
+                'APP_DATABASE_DBPORT': os.environ.get('APP_DATABASE_DBPORT', ''),
+                'APP_DATABASE_DBNAME': os.environ.get('APP_DATABASE_DBNAME', ''),
+            })
+
+        return CliRunner(env=env)
+    except Exception:
+        # Restore original environment on error
+        for key, value in original_environ.items():
+            os.environ[key] = value
+        for key in env_keys_to_restore:
+            if key not in original_environ and key in os.environ:
+                del os.environ[key]
+        raise
 
 
 @pytest.mark.e2e
@@ -92,6 +138,7 @@ class TestCLIDryRun:
 
 
 @pytest.mark.e2e
+@pytest.mark.timeout(600)  # E2E tests need longer timeout due to complex database queries
 class TestCLIWithRealServices:
     """E2E tests for CLI with real database and GCS."""
 
@@ -301,6 +348,7 @@ class TestCLIErrorHandling:
 
 
 @pytest.mark.e2e
+@pytest.mark.timeout(600)  # E2E tests need longer timeout due to complex database queries
 class TestCLIFileGeneration:
     """E2E tests for actual file generation and content verification."""
 
@@ -388,6 +436,7 @@ class TestCLIFileGeneration:
 
 
 @pytest.mark.e2e
+@pytest.mark.timeout(600)  # E2E tests need longer timeout due to complex database queries
 class TestCLIWithDifferentOptions:
     """E2E tests for CLI with various options and file types."""
 

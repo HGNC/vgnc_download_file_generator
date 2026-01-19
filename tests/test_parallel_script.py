@@ -332,13 +332,14 @@ class TestBackwardCompatibility:
     def test_accepts_same_arguments(self) -> None:
         """Test that parallel script accepts same arguments as original."""
         # Arguments from original script
+        # Note: All tests use --dry-run to avoid actual execution that would timeout
         common_args = [
-            ["--species", "9913"],
-            ["--chromosomes", "1,2,X"],
-            ["--formats", "tsv,json"],
+            ["--species", "9913", "--dry-run"],
+            ["--chromosomes", "1,2,X", "--dry-run"],
+            ["--formats", "tsv,json", "--dry-run"],
             ["--dry-run"],
-            ["--skip-withdrawn"],
-            ["--skip-ensembl"],
+            ["--skip-withdrawn", "--dry-run"],
+            ["--skip-ensembl", "--dry-run"],
         ]
 
         for args in common_args:

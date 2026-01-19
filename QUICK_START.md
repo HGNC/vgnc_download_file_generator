@@ -49,19 +49,19 @@ Create a `.env` file in the project root:
 
 ```bash
 # Database Configuration
-APP_DATABASE__DBHOST=localhost
-APP_DATABASE__DBUSER=your_username
-APP_DATABASE__DBPASS=your_password
-APP_DATABASE__DBPORT=3306
-APP_DATABASE__DBNAME=vgnc
+APP_DATABASE_DBHOST=localhost
+APP_DATABASE_DBUSER=your_username
+APP_DATABASE_DBPASSWD=your_password
+APP_DATABASE_DBPORT=3306
+APP_DATABASE_DBNAME=vgnc
 
 # Google Cloud Storage
-APP_GCS__BUCKET_NAME=your-gcs-bucket
-APP_GCS__PROJECT_ID=your-project-id
+APP_GCS_BUCKET_NAME=your-gcs-bucket
+APP_GCS_PROJECT_ID=your-project-id
 
 # Optional: Runtime Configuration
-APP_RUNTIME__CHUNK_SIZE=5000
-APP_RUNTIME__MAX_WORKERS=4
+APP_RUNTIME_CHUNK_SIZE=5000
+APP_RUNTIME_MAX_WORKERS=4
 ```
 
 ### Alternative: Use GCP Secret Manager
@@ -122,7 +122,7 @@ gsutil ls gs://your-gcs-bucket/json/
 gsutil ls gs://your-gcs-bucket/tsv/
 
 # Download a sample file
-gsutil cp gs://your-gcs-bucket/json/cow/cow_vgnc_gene_set_chr_X.json ./
+gsutil cp gs://your-gcs-bucket/json/cattle/cattle_vgnc_gene_set_chr_X.json ./
 ```
 
 ## Common Use Cases
@@ -162,6 +162,23 @@ vgnc-download-file-generator --species All --file-type vgnc_withdrawn --formats 
 
 For generating multiple files efficiently, use the parallel batch script included with the project.
 
+### Understanding What Gets Generated
+
+The parallel script generates ALL files by default:
+
+**Default behavior (no arguments):**
+- "All" species TSV and JSON files (all species combined)
+- Ensembl mapping file (unless `--skip-ensembl`)
+- Withdrawn entries file (unless `--skip-withdrawn`)
+- **Per-species chromosome files** for all species (auto-discovered from database)
+- **Per-species locus type files** for all species (protein-coding, pseudogene)
+
+**With `--species`:**
+- Same as above, but only for the specified species
+
+**With `--chromosomes`:**
+- Restricts chromosome files to the specified chromosomes only
+
 ### Install GNU Parallel
 
 The parallel script requires GNU parallel:
@@ -180,17 +197,20 @@ sudo yum install parallel
 ### Generate Multiple Files in Parallel
 
 ```bash
-# Generate files for multiple species (auto-detects parallelism)
+# Generate ALL files for all species (auto-discovers from database)
+./generate_all_parallel.sh
+
+# Generate files for specific species only
 ./generate_all_parallel.sh --species "9913,9606,9598"
 
 # Control job count manually
-./generate_all_parallel.sh --species "9913,9606" --jobs 4
+./generate_all_parallel.sh --jobs 4
 
-# Specify chromosomes
-./generate_all_parallel.sh --species "9913" --chromosomes "1,2,X,Y"
+# Restrict to specific chromosomes (auto-discovers from DB if not specified)
+./generate_all_parallel.sh --chromosomes "1,2,X,Y"
 
 # Preview what would be generated
-./generate_all_parallel.sh --species "9913" --dry-run
+./generate_all_parallel.sh --dry-run
 ```
 
 ### Parallel Script Features
@@ -206,7 +226,7 @@ sudo yum install parallel
 
 | Option          | Description                              | Default                     |
 | --------------- | ---------------------------------------- | --------------------------- |
-| `--species`     | Comma-separated species taxon IDs        | None (required for species files) |
+| `--species`     | Comma-separated species taxon IDs        | Auto-discover from database |
 | `--chromosomes` | Comma-separated chromosome list          | Auto-discover from database |
 | `--formats`     | Output formats                           | `tsv,json`                  |
 | `--jobs`        | Number of parallel jobs                  | Auto-detect (CPU cores - 2) |

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 # VGNC Download File Generator - Parallel Batch Generation Script
 #
 # This script generates all VGNC download files using GNU parallel
@@ -41,6 +41,9 @@ set -euo pipefail
 # Script version
 VERSION="2.0.0"
 
+# Directory containing this script (for finding helper scripts)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # CLI command (use full path or alias)
 if [[ -n "${VGNC_CLI:-}" ]]; then
     CLI_CMD="${VGNC_CLI}"
@@ -50,6 +53,9 @@ else
     # Fallback to using uv run
     CLI_CMD="uv run python -m vgnc_download_file_generator"
 fi
+
+# Python helper command for database queries
+PYTHON_HELPER="uv run python ${SCRIPT_DIR}/db_query_helper.py"
 
 # Database credentials
 DB_HOST="${APP_DATABASE__DBHOST:-localhost}"
@@ -282,38 +288,58 @@ csv_to_array() {
 get_chromosomes_for_species() {
     local species_id="$1"
 
-    # Check if mysql client is available
-    if ! command -v mysql &> /dev/null; then
-        log_error "mysql client not found. Please install mysql-client or use --chromosomes flag."
-        return 1
-    fi
+    # Change to script directory to ensure .env file is found
+    local original_pwd="$(pwd)"
+    cd "${SCRIPT_DIR}" || return 1
 
-    # Build the SQL query
-    local query="
-        SELECT DISTINCT
-            CASE
-                WHEN c.display_name LIKE 'Un%' THEN 'Un'
-                WHEN c.display_name LIKE 'Un_%' THEN 'Un'
-                ELSE c.display_name
-            END as chromosome_name
-        FROM chromosomes c
-        JOIN gene_location gl ON c.chr_id = gl.chr_id
-        JOIN genefam gf ON gl.gene_id = gf.genefam_id
-        WHERE gf.taxon_id = ${species_id}
-        ORDER BY chromosome_name;
-    "
-
-    # Execute query and return results as comma-separated list
+    # Use Python helper script to query database
     local chromosomes
-    chromosomes=$(mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -N -s -e "${query}" 2>/dev/null)
+    chromosomes=$(${PYTHON_HELPER} chromosomes "${species_id}" 2>/dev/null)
+
+    cd "${original_pwd}" || return 1
 
     if [[ -z "${chromosomes}" ]]; then
         log_error "No chromosomes found for species ${species_id}"
         return 1
     fi
 
-    # Convert newlines to commas
-    echo "$chromosomes" | tr '\n' ',' | sed 's/,$//'
+    echo "${chromosomes}"
+    return 0
+}
+
+# Query database for all species (auto-discovery for default behavior)
+get_all_species() {
+    # Change to script directory to ensure .env file is found
+    local original_pwd="$(pwd)"
+    cd "${SCRIPT_DIR}" || return 1
+
+    # Use Python helper script to query database
+    local species
+    species=$(${PYTHON_HELPER} species 2>/dev/null)
+
+    cd "${original_pwd}" || return 1
+
+    if [[ -z "${species}" ]]; then
+        log_error "No species found in database"
+        log_error "This may be due to:"
+        log_error "  1. MySQL database not accessible"
+        log_error "  2. MySQL client library not found (libmysqlclient.21.dylib)"
+        log_error "  3. Database credentials not configured in .env file"
+        log_error ""
+        log_error "To fix MySQL client library issues on macOS with Homebrew:"
+        log_error "  brew link mysql-client --force"
+        log_error "  or export DYLD_LIBRARY_PATH=\$(brew --prefix mysql-client)/lib"
+        return 1
+    fi
+
+    cd "${original_pwd}" || return 1
+
+    if [[ -z "${species}" ]]; then
+        log_error "No species found in database"
+        return 1
+    fi
+
+    echo "${species}"
     return 0
 }
 
@@ -382,6 +408,32 @@ fi
 # Step 2: Per-Species Chromosome Files
 # ============================================
 
+# Auto-discover species if not specified (default behavior: generate ALL files)
+if [[ -z "${SPECIES_FILTER}" ]]; then
+    log_info "No --species specified, auto-discovering all species from database..."
+
+    if [[ -z "${DRY_RUN_FLAG}" ]]; then
+        DISCOVERED_SPECIES=$(get_all_species)
+
+        if [[ $? -ne 0 ]]; then
+            log_error "Failed to discover species from database"
+            if [[ "${CONTINUE_ON_ERROR}" == true ]]; then
+                log_info "Continuing without per-species files"
+                SPECIES_FILTER=""
+            else
+                exit 1
+            fi
+        else
+            SPECIES_FILTER="${DISCOVERED_SPECIES}"
+            log_info "Discovered species: ${SPECIES_FILTER}"
+        fi
+    else
+        # Dry run mode - can't query DB, use example species
+        SPECIES_FILTER="9913,9606,9598"
+        log_info "Dry run: using example species: ${SPECIES_FILTER}"
+    fi
+fi
+
 if [[ -n "${SPECIES_FILTER}" ]]; then
     log_info "Adding per-species chromosome jobs for: ${SPECIES_FILTER}"
 
@@ -430,8 +482,8 @@ if [[ -n "${SPECIES_FILTER}" ]]; then
         done
     done
 else
-    log_info "No specific species specified (--species not provided)"
-    log_info "To generate per-species files, use: --species \"9913,9606,9598\""
+    log_info "No species available for per-species file generation"
+    log_info "This may indicate a database connection issue or no species in the database"
 fi
 
 # ============================================
@@ -455,7 +507,7 @@ if [[ -n "${SPECIES_FILTER}" ]]; then
         done
     done
 else
-    log_info "No specific species specified, skipping locus type files"
+    log_info "No species available for locus type file generation"
 fi
 
 log_info "Total jobs to execute: ${JOB_COUNT}"

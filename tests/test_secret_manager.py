@@ -47,7 +47,8 @@ class TestGetDbCredentials:
         assert result.dbport == 3306
         assert result.dbname == "test-db"
         mock_secret_client.access_secret_version.assert_called_once_with(
-            name="projects/test-project/secrets/test-secret/versions/latest"
+            name="projects/test-project/secrets/test-secret/versions/latest",
+            timeout=30,
         )
 
     def test_project_id_auto_discovery_from_env(
@@ -75,7 +76,8 @@ class TestGetDbCredentials:
 
         assert result.dbhost == "env-host"
         mock_secret_client.access_secret_version.assert_called_once_with(
-            name="projects/env-project/secrets/test-secret/versions/latest"
+            name="projects/env-project/secrets/test-secret/versions/latest",
+            timeout=30,
         )
 
     def test_returns_correct_database_config_object(
