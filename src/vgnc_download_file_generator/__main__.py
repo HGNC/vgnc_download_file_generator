@@ -1,7 +1,6 @@
 """Main entry point for the VGNC download file generator."""
 
 import sys
-from typing import cast
 
 import click
 from rich.console import Console
@@ -289,6 +288,20 @@ def main(
             content_type = "text/tab-separated-values" if fmt == "tsv" else "application/json"
 
             if fmt == "tsv":
+                # Check if TSV generator has data before opening GCS stream
+                row_iterator = iter(generator.generate_tsv_rows())
+                header_row = next(row_iterator, None)
+
+                if header_row is None:
+                    console.print(f"[dim]ℹ[/dim] No data found for {filename} - skipping GCS upload")
+                    continue
+
+                first_data_row = next(row_iterator, None)
+
+                if first_data_row is None:
+                    console.print(f"[dim]ℹ[/dim] No data found for {filename} - skipping GCS upload")
+                    continue
+
                 # Stream TSV directly to GCS
                 with gcs_writer.open_write_stream(filename, content_type, compress=compress) as f:
                     lines_written = 0
@@ -301,7 +314,13 @@ def main(
                     ) as progress:
                         task = progress.add_task("Writing rows...", total=None)
 
-                        for line in generator.generate_tsv_rows():
+                        # Write header and first data row
+                        f.write(header_row)
+                        lines_written += 1
+                        f.write(first_data_row)
+                        lines_written += 1
+
+                        for line in row_iterator:
                             f.write(line)
                             lines_written += 1
                             if lines_written % 1000 == 0:
@@ -318,6 +337,14 @@ def main(
                             console.print(f"[yellow]  Warning: Failed to create backward compatibility copy: {e}[/yellow]")
 
             else:  # json
+                # Check if JSON generator has data before opening GCS stream
+                row_iterator = iter(generator.generate_json_rows())
+                first_row = next(row_iterator, None)
+
+                if first_row is None:
+                    console.print(f"[dim]ℹ[/dim] No data found for {filename} - skipping GCS upload")
+                    continue
+
                 # Stream JSON directly to GCS
                 with gcs_writer.open_write_stream(filename, content_type, compress=compress) as f:
                     rows_written = 0
@@ -332,13 +359,12 @@ def main(
 
                         # Write opening bracket
                         f.write("[\n")
-                        first_row = True
+                        f.write(first_row)
+                        rows_written = 1
 
-                        for row_json in generator.generate_json_rows():
-                            if not first_row:
-                                f.write(",\n")
+                        for row_json in row_iterator:
+                            f.write(",\n")
                             f.write(row_json)
-                            first_row = False
                             rows_written += 1
                             if rows_written % 1000 == 0:
                                 progress.update(task, description=f"Writing rows... ({rows_written:,})")

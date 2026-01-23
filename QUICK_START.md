@@ -11,10 +11,11 @@ Before you begin, ensure you have:
 - **Google Cloud account** with:
   - A GCS bucket created
   - Service account key or Application Default Credentials configured
+- **GNU parallel** (for batch generation)
 
 ## 1. Install the Application
 
-**Option A: Quick setup with the setup script (recommended)**
+### Option A: Quick setup with the setup script (recommended)
 
 ```bash
 # Clone the repository
@@ -26,10 +27,11 @@ cd vgnc_download_file_generator
 ```
 
 The setup script will:
+
 - Install Python dependencies via `uv sync`
 - Check for and optionally install GNU parallel
 
-**Option B: Manual setup**
+### Option B: Manual setup
 
 ```bash
 # Install dependencies (recommended: uv)
@@ -38,7 +40,7 @@ uv sync
 # Or with pip
 pip install -e .
 
-# Install GNU parallel manually (optional, for parallel batch generation)
+# Install GNU parallel manually
 brew install parallel  # macOS
 sudo apt-get install parallel  # Ubuntu/Debian
 ```
@@ -76,38 +78,36 @@ The application will automatically fetch credentials from the secret named `vgnc
 
 ## 3. Run Your First Generation
 
-After installation, you have three ways to run the CLI:
+The **recommended way** to generate files is using the parallel batch script, which efficiently generates all files in parallel.
+
+### Generate All Files (Default)
 
 ```bash
-# Option 1: Direct command (recommended)
-vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
-
-# Option 2: Shorter alias
-vgnc-generator --species 9913 --chromosome X --formats tsv,json
-
-# Option 3: Python module (if entry points not in PATH)
-uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv,json
+# Generate ALL files for all species (auto-discovers from database)
+./generate_all_parallel.sh
 ```
 
-### Generate Files for a Single Species
+This generates:
+
+- **"All" species files**: Combined TSV and JSON with all species
+- **Ensembl mapping file**: VGNC to Ensembl gene ID mapping
+- **Withdrawn entries file**: All withdrawn entries
+- **Per-species chromosome files**: For each species (auto-discovered)
+- **Per-species locus type files**: Protein-coding and pseudogene files
+- **Per-species locus group files**: Protein-coding gene and pseudogene files
+
+### Generate for Specific Species
 
 ```bash
-# Generate TSV and JSON files for cow (taxon_id: 9913), chromosome X
-vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
+# Generate files for specific species only
+./generate_all_parallel.sh --species "9913,9606,9598"
 ```
 
-### Generate All Species Files
+### Preview Before Generating
 
 ```bash
-# Generate files for all species (with taxon_id column)
-vgnc-download-file-generator --species All --formats tsv,json
-```
-
-### Generate Ensembl Mapping
-
-```bash
-# Generate VGNC to Ensembl gene ID mapping
-vgnc-download-file-generator --species All --file-type vgnc_ensembl
+# See what would be generated (no files created)
+./generate_all_parallel.sh --dry-run
 ```
 
 ## 4. Verify Output
@@ -125,30 +125,114 @@ gsutil ls gs://your-gcs-bucket/tsv/
 gsutil cp gs://your-gcs-bucket/json/cattle/cattle_vgnc_gene_set_chr_X.json ./
 ```
 
-## Common Use Cases
+## Parallel Script Options
 
-### Dry Run - Preview What Will Be Generated
+| Option | Description | Default |
+| :--- | :--- | :--- |
+| `--species` | Comma-separated species taxon IDs | Auto-discover from database |
+| `--chromosomes` | Comma-separated chromosome list | Auto-discover from database |
+| `--formats` | Output formats | `tsv,json` |
+| `--jobs` | Number of parallel jobs | Auto-detect (CPU cores - 2) |
+| `--timeout` | Job timeout in seconds | `3600` (1 hour) |
+| `--continue` | Continue after retries exhausted | Stop on failure |
+| `--skip-withdrawn` | Skip withdrawn entries generation | Generate withdrawn |
+| `--skip-ensembl` | Skip Ensembl mapping generation | Generate Ensembl |
+| `--dry-run` | Show what would be generated | Execute jobs |
+
+### Parallel Script Features
+
+- **Auto-detection**: Automatically detects CPU cores and calculates optimal job count
+- **Format splitting**: Creates separate jobs for TSV and JSON for better parallelization
+- **Retries**: 3 automatic retries on transient failures
+- **Progress tracking**: Real-time progress bar
+- **Job logging**: Creates timestamped job log files for tracking
+
+### Recent Improvements
+
+- **Empty file detection**: Automatically skips files with no data before GCS upload
+- **"Un" chromosome handling**: Captures genes on:
+  - Scaffolds and contigs (non-chromosome coord_systems like `NW_*`, `PJAA_*`)
+  - Chromosomes with display names starting with "Un" (e.g., Un0001, Un_1)
+  - Genes without any location data (NULL chromosome)
+- **Locus group support**: Generates files for both locus types and locus groups
+- **Data integrity**: Cross-species chromosome contamination prevention via taxon_id filtering
+- **Split query architecture**: 2300x performance improvement over monolithic queries
+
+### Recommended Settings
+
+| Environment | CPUs | Suggested Jobs | Command |
+| :--- | :--- | :--- | :--- |
+| MacBook M4 Pro | ~12 | 10 | `./generate_all_parallel.sh --species "9913,9606"` |
+| GCP 8 vCPU | 8 | 6 | `./generate_all_parallel.sh --species "9913,9606" --jobs 6` |
+
+## Single File Generation (CLI)
+
+For generating individual files, use the CLI directly:
 
 ```bash
-# See what files would be created (no database/GCS needed)
-vgnc-download-file-generator --species 9913 --chromosome X --dry-run
+# Option 1: Direct command
+vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
+
+# Option 2: Shorter alias
+vgnc-generator --species 9913 --chromosome X --formats tsv,json
+
+# Option 3: Python module (if entry points not in PATH)
+uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv,json
 ```
 
-### Generate Chromosome-Specific Files
+### CLI Options
+
+| Option | Description | Example |
+| :--- | :--- | :--- |
+| `--species` | Species taxon ID or "All" | `--species 9913` |
+| `--chromosome` | Chromosome identifier ("Un" for scaffolds/unlocated) | `--chromosome X` |
+| `--locus-type` | Locus type filter | `--locus-type "gene with protein product"` |
+| `--locus-group` | Locus group filter | `--locus-group "protein-coding gene"` |
+| `--file-type` | File generator type | `--file-type vgnc_ensembl` |
+| `--formats` | Output formats (comma-separated) | `--formats tsv,json` |
+| `--compress` | Enable gzip compression | `--compress` |
+| `--dry-run` | Show what would be generated | `--dry-run` |
+
+## Common Use Cases
+
+### Generate "Un" Chromosome (Scaffolds and Unlocated Genes)
 
 ```bash
-# Cow chromosome 1
-vgnc-download-file-generator --species 9913 --chromosome 1 --formats tsv,json
+# Generate file for scaffolds, contigs, and genes without location
+vgnc-download-file-generator --species 9796 --chromosome Un --formats tsv,json
+```
 
-# Zebrafish chromosome 5
-vgnc-download-file-generator --species 7955 --chromosome 5 --formats tsv,json
+The "Un" chromosome file includes:
+- Genes on scaffolds/contigs (coord_system != 'chromosome')
+- Genes on chromosomes with display_name starting with "Un"
+- Genes without any location data
+
+### Generate Specific Chromosomes
+
+```bash
+# Restrict to specific chromosomes
+./generate_all_parallel.sh --chromosomes "1,2,X,Y"
+```
+
+### Generate Ensembl Mapping Only
+
+```bash
+# Skip default files, only generate Ensembl mapping
+./generate_all_parallel.sh --skip-withdrawn --species "All" --file-type vgnc_ensembl
 ```
 
 ### Generate Locus Type Files
 
 ```bash
-# Protein-coding genes for cow
+# Protein-coding genes for specific species
 vgnc-download-file-generator --species 9913 --locus-type "gene with protein product" --formats tsv,json
+```
+
+### Generate Locus Group Files
+
+```bash
+# Protein-coding genes for specific species
+vgnc-download-file-generator --species 9913 --locus-group "protein-coding gene" --formats tsv,json
 ```
 
 ### Generate Withdrawn Entries
@@ -157,105 +241,6 @@ vgnc-download-file-generator --species 9913 --locus-type "gene with protein prod
 # All withdrawn entries
 vgnc-download-file-generator --species All --file-type vgnc_withdrawn --formats tsv
 ```
-
-## Batch Generation (Parallel Script)
-
-For generating multiple files efficiently, use the parallel batch script included with the project.
-
-### Understanding What Gets Generated
-
-The parallel script generates ALL files by default:
-
-**Default behavior (no arguments):**
-- "All" species TSV and JSON files (all species combined)
-- Ensembl mapping file (unless `--skip-ensembl`)
-- Withdrawn entries file (unless `--skip-withdrawn`)
-- **Per-species chromosome files** for all species (auto-discovered from database)
-- **Per-species locus type files** for all species (protein-coding, pseudogene)
-
-**With `--species`:**
-- Same as above, but only for the specified species
-
-**With `--chromosomes`:**
-- Restricts chromosome files to the specified chromosomes only
-
-### Install GNU Parallel
-
-The parallel script requires GNU parallel:
-
-```bash
-# macOS
-brew install parallel
-
-# Ubuntu/Debian
-sudo apt-get install parallel
-
-# CentOS/RHEL
-sudo yum install parallel
-```
-
-### Generate Multiple Files in Parallel
-
-```bash
-# Generate ALL files for all species (auto-discovers from database)
-./generate_all_parallel.sh
-
-# Generate files for specific species only
-./generate_all_parallel.sh --species "9913,9606,9598"
-
-# Control job count manually
-./generate_all_parallel.sh --jobs 4
-
-# Restrict to specific chromosomes (auto-discovers from DB if not specified)
-./generate_all_parallel.sh --chromosomes "1,2,X,Y"
-
-# Preview what would be generated
-./generate_all_parallel.sh --dry-run
-```
-
-### Parallel Script Features
-
-- **Auto-detection**: Automatically detects CPU cores and calculates optimal job count (cores - 2)
-- **Format splitting**: Creates separate jobs for TSV and JSON for better parallelization
-- **Retries**: 3 automatic retries on transient failures
-- **Progress tracking**: Real-time progress bar
-- **Job logging**: Creates timestamped job log files for tracking
-- **Continue on error**: Optional mode to continue processing after failures
-
-### Parallel Script Options
-
-| Option          | Description                              | Default                     |
-| --------------- | ---------------------------------------- | --------------------------- |
-| `--species`     | Comma-separated species taxon IDs        | Auto-discover from database |
-| `--chromosomes` | Comma-separated chromosome list          | Auto-discover from database |
-| `--formats`     | Output formats                           | `tsv,json`                  |
-| `--jobs`        | Number of parallel jobs                  | Auto-detect (CPU cores - 2) |
-| `--timeout`     | Job timeout in seconds                   | `3600` (1 hour)            |
-| `--continue`    | Continue after retries exhausted         | Stop on failure            |
-| `--skip-withdrawn` | Skip withdrawn entries generation   | Generate withdrawn          |
-| `--skip-ensembl`   | Skip Ensembl mapping generation      | Generate Ensembl            |
-| `--dry-run`     | Show what would be generated             | Execute jobs                |
-
-### Recommended Settings
-
-For your target environments:
-
-| Environment       | CPUs  | Suggested Jobs | Command                          |
-| ----------------- | ----- | -------------- | -------------------------------- |
-| MacBook M4 Pro    | ~12   | 10             | `./generate_all_parallel.sh --species "9913,9606"` |
-| GCP 8 vCPU        | 8     | 6              | `./generate_all_parallel.sh --species "9913,9606" --jobs 6` |
-
-## Command Line Options
-
-| Option          | Description                  | Example                                        |
-| --------------- | ---------------------------- | ---------------------------------------------- |
-| `--species`     | Species taxon ID or "All"    | `--species 9913`                               |
-| `--chromosome`  | Chromosome identifier        | `--chromosome X`                               |
-| `--locus-type`  | Locus type filter            | `--locus-type "gene with protein product"`       |
-| `--locus-group` | Locus group filter           | `--locus-group "protein-coding gene"`            |
-| `--file-type`   | File generator type          | `--file-type vgnc_ensembl`                     |
-| `--formats`     | Output formats (comma-separated) | `--formats tsv,json`                        |
-| `--compress`    | Enable gzip compression      | `--compress`                                   |
 
 ## Python API Quick Start
 

@@ -4,18 +4,17 @@ Tests the new approach of splitting the complex build_gene_query into
 multiple simpler queries and merging results in Python.
 """
 
-from unittest.mock import MagicMock
 
-import pytest
+
+from sqlalchemy.sql.expression import TextClause
 
 from vgnc_download_file_generator.database.queries_split import (
-    build_gene_data_query,
-    build_xrefs_query,
     build_aliases_query,
     build_dates_query,
+    build_gene_data_query,
+    build_xrefs_query,
     merge_gene_results,
 )
-from sqlalchemy.sql.expression import TextClause
 
 
 class TestBuildGeneDataQuery:
@@ -48,9 +47,11 @@ class TestBuildGeneDataQuery:
         query = build_gene_data_query(filters={"taxon_id": 9913})
         sql = query.text
 
-        # Should have WHERE clause
+        # Should have WHERE clause for genefam
         assert "gf.taxon_id" in sql
         assert ":taxon_id" in sql
+        # Should also filter chromosomes by same taxon_id to prevent cross-species contamination
+        assert "c.taxon_id = gf.taxon_id" in sql
 
     def test_chromosome_filter(self) -> None:
         """Test chromosome filter is applied correctly."""
@@ -58,6 +59,21 @@ class TestBuildGeneDataQuery:
         sql = query.text
 
         assert "c.display_name" in sql
+        assert ":chromosome" in sql
+
+    def test_chromosome_filter_un_uses_like(self) -> None:
+        """Test that 'Un' chromosome uses LIKE for prefix matching.
+
+        The 'Un' chromosome should match all chromosomes starting with 'Un'
+        (e.g., Un0001, Un_1, Un_random) using LIKE pattern matching.
+        """
+        query = build_gene_data_query(filters={"chromosome": "Un"})
+        sql = query.text
+
+        # Should use LIKE for prefix matching
+        assert "LIKE" in sql
+        assert "c.display_name" in sql
+        # The parameter should be 'Un%' for prefix matching
         assert ":chromosome" in sql
 
     def test_locus_type_filter(self) -> None:

@@ -9,7 +9,6 @@ Usage:
     python db_query_helper.py chromosomes 9913  # Get chromosomes for species
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -54,6 +53,18 @@ def get_all_species():
 def get_chromosomes_for_species(species_id: int) -> str:
     """Query database for chromosomes of a specific species.
 
+    Groups all non-chromosome data (coord_system not equal to 'chromosome')
+    into a single 'Un' chromosome entry. Only actual chromosomes with
+    coord_system = 'chromosome' are kept as separate files.
+
+    Also checks for genes WITHOUT location data and includes 'Un' in the
+    chromosome list if such genes exist. This ensures all genes are captured
+    in some file.
+
+    Joins with gene_has_location, gene_location, and genefam to ensure only
+    chromosomes with actual gene data are returned. If the species has genes but
+    no chromosome/location data, returns 'Un' as a fallback.
+
     Args:
         species_id: Taxon ID of the species
 
@@ -67,18 +78,17 @@ def get_chromosomes_for_species(species_id: int) -> str:
     db = DatabaseConnection(config.database)
 
     query = """
-        SELECT DISTINCT
-            CASE
-                WHEN c.display_name LIKE 'Un%%' THEN 'Un'
-                WHEN c.display_name LIKE 'Un_%%' THEN 'Un'
-                ELSE c.display_name
-            END as chromosome_name
-        FROM chromosomes c
-        JOIN gene_location gl ON c.chr_id = gl.chr_id
-        JOIN gene_has_location ghl ON gl.id = ghl.location_id
-        JOIN genefam gf ON ghl.gene_id = gf.genefam_id
+        SELECT DISTINCT c.display_name
+        FROM genefam gf
+        JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+        JOIN gene_location gl ON ghl.location_id = gl.id
+        JOIN chromosomes c ON gl.chr_id = c.chr_id
         WHERE gf.taxon_id = %s
-        ORDER BY chromosome_name;
+          AND c.taxon_id = gf.taxon_id
+          AND c.coord_system LIKE '%%chromosome%%'
+          AND c.display_name NOT LIKE 'Un%%'
+          AND c.display_name NOT LIKE 'Un_%%'
+        ORDER BY c.display_name;
     """
 
     conn = db.get_connection()
@@ -86,7 +96,37 @@ def get_chromosomes_for_species(species_id: int) -> str:
     cursor.execute(query, (species_id,))
     chromosomes = [row[0] for row in cursor.fetchall()]
     cursor.close()
+
+    # Check if there are genes that should go in Un file:
+    # 1. Genes on non-chromosome coord_systems (scaffolds, contigs)
+    # 2. Genes on chromosomes with display_name starting with Un/Un_
+    # 3. Genes with NO location data at all
+    un_check_query = """
+        SELECT 1
+        FROM genefam gf
+        LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+        LEFT JOIN gene_location gl ON ghl.location_id = gl.id
+        LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
+        WHERE gf.taxon_id = %s
+          AND (
+            ghl.gene_id IS NULL  -- No location data at all
+            OR (c.chr_id IS NOT NULL AND (
+                c.coord_system NOT LIKE '%%chromosome%%'  -- Non-chromosome coord_system
+                OR c.display_name LIKE 'Un%%'  -- Display name starts with Un
+                OR c.display_name LIKE 'Un_%%'  -- Display name starts with Un_
+            ))
+          )
+        LIMIT 1
+    """
+    cursor = conn.cursor()
+    cursor.execute(un_check_query, (species_id,))
+    has_un_genes = cursor.fetchone() is not None
+    cursor.close()
     conn.close()
+
+    # If there are any genes that should be in Un file, add 'Un' to the list
+    if has_un_genes:
+        chromosomes.append('Un')
 
     return ",".join(chromosomes)
 

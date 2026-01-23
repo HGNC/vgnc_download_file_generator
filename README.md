@@ -2,8 +2,7 @@
 
 A Python tool for generating VGNC (Vertebrate Gene Nomenclature Consortium) download files and uploading them to Google Cloud Storage.
 
-[![Tests](https://img.shields.io/badge/tests-261%20passing-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)](#test-coverage)
+[![Tests](https://img.shields.io/badge/tests-320%20total%20(276%20passing%20%2B%2044%20skipped)-brightgreen)](tests/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -16,12 +15,16 @@ A Python tool for generating VGNC (Vertebrate Gene Nomenclature Consortium) down
 ## Features
 
 - **Multiple File Generators**: Support for VGNC Public, Ensembl mapping, and Withdrawn entries
+- **Per-Species Files**: Chromosome-specific, locus type, and locus group files
+- **"Un" Chromosome Handling**: Captures genes on scaffolds, contigs, and without location data
 - **Dual Output Formats**: TSV (tab-separated values) and JSON
-- **Streaming Architecture**: Memory-efficient processing for large datasets
+- **Streaming Architecture**: Memory-efficient processing for large datasets using split query pattern
 - **GCS Integration**: Direct streaming uploads to Google Cloud Storage
+- **Empty File Detection**: Automatically skips files with no data to prevent empty uploads
 - **Retry Logic**: Exponential backoff for transient failures
 - **Compression**: Optional gzip compression for large files
-- **Database Integration**: MySQL with SQLAlchemy ORM and server-side cursors
+- **Database Integration**: MySQL with server-side cursors for streaming
+- **Species Data Integrity**: Cross-species chromosome contamination prevention
 
 ## Requirements
 
@@ -49,6 +52,7 @@ uv sync
 ```
 
 **Requirements:**
+
 - Python 3.13+
 - MySQL database with VGNC data
 - Google Cloud account with GCS bucket
@@ -134,9 +138,11 @@ For generating multiple files efficiently, use the parallel batch script:
 ```
 
 **Requirements:**
+
 - GNU parallel (install with `brew install parallel` on macOS or `sudo apt-get install parallel` on Linux)
 
 **Features:**
+
 - Auto-detects CPU cores for optimal parallelism
 - **Format splitting**: Creates separate jobs for TSV and JSON for better parallelization
 - 3 automatic retries on transient failures
@@ -180,48 +186,42 @@ gcs.upload_from_file("/tmp/output.txt", "cow_chrX.txt", compress=True)
 
 ## Project Structure
 
-```
+```text
 src/vgnc_download_file_generator/
+├── __main__.py            # CLI entry point
 ├── config.py              # Pydantic configuration models
 ├── generator.py           # Base file generator class
 ├── database/
 │   ├── connection.py      # MySQL connection with pooling
-│   ├── queries.py         # SQL query builders
-│   └── schema.py          # SQLAlchemy ORM models
+│   ├── queries.py         # SQL query compilation utilities
+│   └── queries_split.py   # Split query architecture (high-performance)
 ├── generators/
+│   ├── __init__.py        # Generator exports
 │   ├── vgnc_public.py     # VGNC public files
 │   ├── vgnc_ensembl.py    # Ensembl mapping files
 │   └── vgnc_withdrawn.py  # Withdrawn entries files
 ├── models/
+│   ├── __init__.py        # Model exports
 │   ├── file_spec.py       # File specification models
 │   └── species.py         # Species information model
 ├── utils/
+│   ├── __init__.py        # Utility exports
 │   ├── secret_manager.py  # GCP Secret Manager integration
 │   └── streaming.py       # Streaming utilities
 └── writers/
     └── gcs_writer.py      # GCS streaming writer with retry logic
+
+Helper Scripts:
+├── db_query_helper.py     # Database query helper for parallel script
+├── generate_all_parallel.sh  # Parallel batch generation script
+└── setup.sh               # Installation script
 ```
 
 ## Development
 
 ### Running Tests
 
-The project has three types of tests:
-
-1. **Unit Tests**: Fast tests with mocked dependencies (216 tests)
-2. **Integration Tests**: Tests against real database and GCS (28 tests)
-3. **E2E Tests**: Full CLI workflow tests (16 tests)
-
 ```bash
-# Run unit tests only (default - fast, no external dependencies)
-uv run pytest -m "not integration and not e2e"
-
-# Run integration tests (requires real database and GCS)
-uv run pytest --integration
-
-# Run E2E tests (requires full environment)
-uv run pytest --e2e
-
 # Run all tests
 uv run pytest
 
@@ -230,9 +230,15 @@ uv run pytest --cov=src/vgnc_download_file_generator --cov-report=html
 
 # Run specific test file
 uv run pytest tests/test_gcs_writer.py -v
+
+# Run tests matching pattern
+uv run pytest -k "chromosome" -v
 ```
 
-**Note**: Integration and E2E tests require:
+**Test Summary**: 320 total tests (276 passing + 44 skipped)
+
+**Note**: Integration tests require:
+
 - `GOOGLE_APPLICATION_CREDENTIALS` pointing to a service account key
 - Database credentials via environment variables or GCP Secret Manager
 - Access to the test GCS bucket
@@ -250,13 +256,10 @@ uv run ruff check src/
 uv run ruff format src/
 ```
 
-### Test Coverage
-
-Current coverage: **94%** (261 total tests: 217 unit + 28 integration + 16 E2E)
-
 ## File Formats
 
 ### VGNC Public Files
+
 - **TSV**: Tab-separated values with standard headers
 - **JSON**: Array of objects with lowercase_underscore keys
 - **Special cases**:
@@ -264,28 +267,34 @@ Current coverage: **94%** (261 total tests: 217 unit + 28 integration + 16 E2E)
   - Cattle/Bos taurus (taxon 9913): Adds `bgd_id` column
 
 ### Ensembl Mapping
+
 - Single file mapping VGNC IDs to Ensembl gene IDs
 - Filter: Status = 'Approved'
 - Location: `ensembl/VGNC_to_Ensembl_mapping.txt`
 
 ### Withdrawn Entries
+
 - Filter: Status IN ['Entry Withdrawn', 'Symbol Withdrawn']
 - Includes `MERGED_INTO_REPORT(S)` field
 
 ## GCS Output Structure
 
-```
+```text
 bucket/
 ├── json/
 │   ├── {species}/
 │   │   ├── {species}_vgnc_gene_set_chr_{chromosome}.json
-│   │   └── locus_types/
-│   │       └── {species}_{locus_type}_All.json
+│   │   ├── locus_types/
+│   │   │   └── {species}_{locus_type}_All.json
+│   │   └── locus_groups/
+│   │       └── {species}_{locus_group}_All.json
 ├── tsv/
 │   ├── {species}/
 │   │   ├── {species}_vgnc_gene_set_chr_{chromosome}.txt
-│   │   └── locus_types/
-│   │       └── {species}_{locus_type}_All.txt
+│   │   ├── locus_types/
+│   │   │   └── {species}_{locus_type}_All.txt
+│   │   └── locus_groups/
+│   │       └── {species}_{locus_group}_All.txt
 ├── ensembl/
 │   └── VGNC_to_Ensembl_mapping.txt
 └── withdrawn/

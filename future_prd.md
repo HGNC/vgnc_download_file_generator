@@ -1,5 +1,36 @@
 # Product Requirements: Generate All VGNC Download Files
 
+## Implementation Status
+
+**Current Implementation**: `generate_all_parallel.sh` (bash script)
+
+The functionality described in this PRD is currently implemented via a bash script rather than a `--generate-all` CLI option. The script provides:
+
+- ✅ Auto-discovery of species from database
+- ✅ Auto-discovery of chromosomes for each species
+- ✅ Per-species chromosome file generation
+- ✅ Per-species locus type file generation (protein-coding, pseudogene)
+- ✅ Per-species locus group file generation (protein-coding gene, pseudogene)
+- ✅ "All" species files (vgnc_public, vgnc_ensembl, vgnc_withdrawn)
+- ✅ Both TSV and JSON format generation
+- ✅ Parallel execution via GNU parallel
+- ✅ Progress bar display
+- ✅ Retry logic with exponential backoff
+- ✅ Job logging and failure tracking
+- ✅ Species/chromosome filtering options
+- ✅ Dry-run mode for preview
+
+**Not Yet Implemented**:
+- ❌ `--generate-all` as a native Python CLI option (currently uses bash script)
+- ❌ Skip existing files check (always generates)
+- ❌ Check-only mode to show missing files
+- ❌ Incremental updates based on database changes
+
+**Recent Improvements**:
+- ✅ Empty file detection - skips files with no data before GCS upload
+- ✅ Cross-species chromosome contamination prevention (taxon_id filtering)
+- ✅ Unlocated gene handling - genes without location data go to "Un" file
+
 ## Overview
 
 Add a `--generate-all` CLI option that automatically generates all possible VGNC download files for all species, chromosomes, locus types, and file types.
@@ -164,6 +195,7 @@ This query discovers all chromosomes that have gene locations for a given specie
 ```sql
 SELECT DISTINCT
     CASE
+        WHEN c.coord_system LIKE '%scaffold%' THEN 'Un'
         WHEN c.display_name LIKE 'Un%' THEN 'Un'
         WHEN c.display_name LIKE 'Un_%' THEN 'Un'
         ELSE c.display_name
@@ -177,8 +209,9 @@ ORDER BY chromosome_name;
 
 **Important notes:**
 - Different species have vastly different chromosome counts
-- Unplaced scaffolds (Un0001, Un0002, etc.) are grouped together as "Un"
-- Horse has ~5,354 chromosomes in database, but after grouping Un scaffolds, this is much more manageable
+- Unplaced scaffolds (identified by `coord_system` containing 'scaffold') are grouped together as "Un"
+  - Examples include: KE145709.1, KE146291.1, JSUE03047131.1, NTIC01000001.1, etc.
+- Horse has ~5,354 chromosomes in database, but after grouping scaffolds, this is much more manageable
 - Some species have scaffold naming (e.g., Cat: A1, A2, A3, B1, B2, etc.)
 - Some species have haplotype chromosomes
 - The query uses JOINs to ensure only chromosomes with actual gene data are returned

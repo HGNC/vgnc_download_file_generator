@@ -86,19 +86,44 @@ def build_gene_data_query(
     param_counter = 0
 
     if filters:
-        # Filter by taxon_id
+        # Filter by taxon_id - ensures both genes AND chromosomes belong to the species
         if "taxon_id" in filters:
             param_name = f"taxon_id_{param_counter}"
             where_clauses.append(f"gf.taxon_id = :{param_name}")
             bind_params[param_name] = filters["taxon_id"]  # type: ignore[assignment]
+            # Also filter chromosomes to prevent cross-species contamination
+            # For "Un" chromosome, allow NULL chromosomes (genes without location)
+            chromosome_is_un = filters.get("chromosome") == "Un"
+            if chromosome_is_un:
+                where_clauses.append("(c.taxon_id = gf.taxon_id OR c.chr_id IS NULL)")
+            else:
+                where_clauses.append("c.taxon_id = gf.taxon_id")
             param_counter += 1
 
         # Filter by chromosome
         if "chromosome" in filters:
-            param_name = f"chromosome_{param_counter}"
-            where_clauses.append(f"c.display_name = :{param_name}")
-            bind_params[param_name] = filters["chromosome"]  # type: ignore[assignment]
-            param_counter += 1
+            chromosome_value = filters["chromosome"]
+            # Special case: "Un" should match:
+            # 1. Chromosomes with display_name starting with "Un" (e.g., Un0001, Un_1)
+            # 2. Non-chromosome coord_systems (scaffolds, primary_assembly, etc.)
+            # 3. Genes with NO location data (c.chr_id IS NULL)
+            if chromosome_value == "Un":
+                # Build OR condition for Un chromosome grouping
+                # (c.chr_id IS NULL OR c.display_name LIKE 'Un%' OR c.coord_system NOT LIKE '%chromosome%')
+                param_name_like = f"chromosome_like_{param_counter}"
+                param_name_coord = f"chromosome_coord_{param_counter}"
+                where_clauses.append(
+                    f"(c.chr_id IS NULL OR c.display_name LIKE :{param_name_like} "
+                    f"OR c.coord_system NOT LIKE :{param_name_coord})"
+                )
+                bind_params[param_name_like] = f"{chromosome_value}%"  # type: ignore[assignment]
+                bind_params[param_name_coord] = "%chromosome%"  # type: ignore[assignment]
+                param_counter += 2
+            else:
+                param_name = f"chromosome_{param_counter}"
+                where_clauses.append(f"c.display_name = :{param_name}")
+                bind_params[param_name] = chromosome_value  # type: ignore[assignment]
+                param_counter += 1
 
         # Filter by locus_type
         if "locus_type" in filters:
@@ -222,7 +247,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     # Use unique parameter names for each UNION ALL section
     p1, p2, p3, p4 = ("genefam_ids_1", "genefam_ids_2", "genefam_ids_3", "genefam_ids_4")
 
-    sql = f"""
+    sql = """
         SELECT
             genefam_id,
             GROUP_CONCAT(alias_symbol ORDER BY alias_symbol SEPARATOR '|') AS alias_symbol,
@@ -246,7 +271,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     if genefam_ids:
         sql += f"              AND gas.genefam_id IN :{p1}"
 
-    sql += f"""
+    sql += """
             UNION ALL
 
             -- Non-previous names
@@ -265,7 +290,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     if genefam_ids:
         sql += f"              AND gan.genefam_id IN :{p2}"
 
-    sql += f"""
+    sql += """
             UNION ALL
 
             -- Previous symbols
@@ -284,7 +309,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     if genefam_ids:
         sql += f"              AND gas.genefam_id IN :{p3}"
 
-    sql += f"""
+    sql += """
             UNION ALL
 
             -- Previous names
@@ -345,7 +370,7 @@ def build_dates_query(genefam_ids: list[int] | None = None) -> TextClause:
     # Use unique parameter names for each UNION section
     p1, p2 = ("genefam_ids_1", "genefam_ids_2")
 
-    sql = f"""
+    sql = """
         SELECT
             genefam_id,
             MIN(date) AS date_approved_reserved,
@@ -360,7 +385,7 @@ def build_dates_query(genefam_ids: list[int] | None = None) -> TextClause:
     if genefam_ids:
         sql += f"          WHERE gh.genefam_id IN :{p1}"
 
-    sql += f"""
+    sql += """
             UNION ALL
 
             SELECT gh.genefam_id, gh.date, ct.field_changed

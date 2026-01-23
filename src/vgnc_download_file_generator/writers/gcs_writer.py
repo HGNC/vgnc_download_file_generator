@@ -182,8 +182,8 @@ class GCSStreamWriter:
         finally:
             # Ensure stream is closed on exit
             stream.close()
-            # Make the blob publicly readable after upload completes
-            blob.make_public()
+            # Note: Bucket uses uniform bucket-level access
+            # Public access is granted via IAM policy, not object ACLs
 
     @retry_with_exponential_backoff(max_retries=3, initial_backoff=1, multiplier=2)
     def _open_blob_with_retry(self, blob: storage.Blob) -> Any:
@@ -259,8 +259,8 @@ class GCSStreamWriter:
             source_path: Path to the local file to upload
         """
         blob.upload_from_filename(source_path)
-        # Make the blob publicly readable so files can be downloaded
-        blob.make_public()
+        # Note: Bucket uses uniform bucket-level access
+        # Public access is granted via IAM policy, not object ACLs
 
     def create_backward_compatibility_copy(self, source_path: str, legacy_species: str) -> None:
         """Create a backward compatibility copy from new path to legacy species path.
@@ -292,5 +292,5 @@ class GCSStreamWriter:
         # Copy the source blob to the destination (rewrite operation)
         # This creates a backward compatibility link without using actual symlinks
         source_blob.copy_to(dest_blob, timeout=300)
-        # Make the copy publicly readable as well
-        dest_blob.make_public()
+        # Note: Bucket uses uniform bucket-level access
+        # Public access is granted via IAM policy, not object ACLs

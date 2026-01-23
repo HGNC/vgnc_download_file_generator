@@ -8,7 +8,6 @@ import json
 from collections.abc import Generator, Iterator
 from typing import Any
 
-from vgnc_download_file_generator.database.queries import build_gene_query
 from vgnc_download_file_generator.generator import BaseFileGenerator
 from vgnc_download_file_generator.utils.streaming import stream_gene_data
 

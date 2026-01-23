@@ -88,6 +88,12 @@ DEFAULT_LOCUS_TYPES=(
     "pseudogene"
 )
 
+# Common locus groups
+DEFAULT_LOCUS_GROUPS=(
+    "protein-coding gene"
+    "pseudogene"
+)
+
 # ============================================
 # Detect CPU Cores for Auto Job Detection
 # ============================================
@@ -522,6 +528,30 @@ if [[ -n "${SPECIES_FILTER}" ]]; then
     done
 else
     log_info "No species available for locus type file generation"
+fi
+
+# ============================================
+# Step 4: Per-Species Locus Group Files
+# ============================================
+
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    log_info "Adding per-species locus group jobs for: ${SPECIES_FILTER}"
+
+    IFS=',' read -ra SPECIES_ARRAY <<< "${SPECIES_FILTER}"
+    for SPECIES_ID in "${SPECIES_ARRAY[@]}"; do
+        SPECIES_ID=$(echo "${SPECIES_ID}" | xargs)
+
+        for LOCUS_GROUP in "${DEFAULT_LOCUS_GROUPS[@]}"; do
+            # Split formats into individual jobs
+            for FORMAT in "${FORMAT_ARRAY[@]}"; do
+                FORMAT=$(echo "${FORMAT}" | xargs)
+                echo "--species \"${SPECIES_ID}\" --locus-group \"${LOCUS_GROUP}\" --formats \"${FORMAT}\" ${DRY_RUN_FLAG}" >> "${JOB_FILE}"
+                JOB_COUNT=$((JOB_COUNT + 1))
+            done
+        done
+    done
+else
+    log_info "No species available for locus group file generation"
 fi
 
 log_info "Total jobs to execute: ${JOB_COUNT}"
