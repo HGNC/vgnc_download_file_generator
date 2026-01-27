@@ -34,6 +34,7 @@ def build_gene_data_query(
             - chromosome: Filter by chromosome name (e.g., "X", "1")
             - locus_type: Filter by locus type
             - locus_group: Filter by locus group
+            - status_id: Filter by gene status_id (int or list for IN clause)
             - status: Filter by gene status (string or list for IN clause)
 
     Returns:
@@ -116,8 +117,8 @@ def build_gene_data_query(
                     f"(c.chr_id IS NULL OR c.display_name LIKE :{param_name_like} "
                     f"OR c.coord_system NOT LIKE :{param_name_coord})"
                 )
-                bind_params[param_name_like] = f"{chromosome_value}%"  # type: ignore[assignment]
-                bind_params[param_name_coord] = "%chromosome%"  # type: ignore[assignment]
+                bind_params[param_name_like] = f"{chromosome_value}%"
+                bind_params[param_name_coord] = "%chromosome%"
                 param_counter += 2
             else:
                 param_name = f"chromosome_{param_counter}"
@@ -137,6 +138,18 @@ def build_gene_data_query(
             param_name = f"locus_group_{param_counter}"
             where_clauses.append(f"lg.name = :{param_name}")
             bind_params[param_name] = filters["locus_group"]  # type: ignore[assignment]
+            param_counter += 1
+
+        # Filter by status_id (supports single value or list for IN clause)
+        if "status_id" in filters:
+            param_name = f"status_id_{param_counter}"
+            status_id_value = filters["status_id"]
+            if isinstance(status_id_value, list):
+                where_clauses.append(f"gf.status_id IN :{param_name}")
+                bind_params[param_name] = tuple(status_id_value)
+            else:
+                where_clauses.append(f"gf.status_id = :{param_name}")
+                bind_params[param_name] = status_id_value
             param_counter += 1
 
         # Filter by status (supports single value or list for IN clause)

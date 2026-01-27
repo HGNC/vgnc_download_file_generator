@@ -110,6 +110,9 @@ class VgncEnsembl(BaseFileGenerator):
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
+        # Filter by status_id - only include specific status values
+        filters["status_id"] = [6, 11, 12]
+
         # Create mapping from database column names to standard headers
         column_map = self._get_column_map()
 

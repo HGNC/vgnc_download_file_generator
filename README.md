@@ -258,6 +258,8 @@ uv run ruff format src/
 
 ## File Formats
 
+> **Note**: All generated files are filtered to only include genes with `status_id IN (6, 11, 12)`.
+
 ### VGNC Public Files
 
 - **TSV**: Tab-separated values with standard headers
@@ -269,12 +271,10 @@ uv run ruff format src/
 ### Ensembl Mapping
 
 - Single file mapping VGNC IDs to Ensembl gene IDs
-- Filter: Status = 'Approved'
 - Location: `ensembl/VGNC_to_Ensembl_mapping.txt`
 
 ### Withdrawn Entries
 
-- Filter: Status IN ['Entry Withdrawn', 'Symbol Withdrawn']
 - Includes `MERGED_INTO_REPORT(S)` field
 
 ## GCS Output Structure

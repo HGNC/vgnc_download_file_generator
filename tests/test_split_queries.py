@@ -105,6 +105,22 @@ class TestBuildGeneDataQuery:
         # Should use IN clause for multiple values
         assert "IN" in sql
 
+    def test_status_id_filter_single_value(self) -> None:
+        """Test status_id filter with single value."""
+        query = build_gene_data_query(filters={"status_id": 6})
+        sql = query.text
+
+        assert "gf.status_id" in sql
+
+    def test_status_id_filter_multiple_values(self) -> None:
+        """Test status_id filter with multiple values (IN clause)."""
+        query = build_gene_data_query(filters={"status_id": [6, 11, 12]})
+        sql = query.text
+
+        # Should use IN clause for multiple values
+        assert "gf.status_id" in sql
+        assert "IN" in sql
+
 
 class TestBuildXrefsQuery:
     """Tests for build_xrefs_query - external database references."""
