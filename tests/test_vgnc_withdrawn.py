@@ -161,7 +161,10 @@ class TestVgncWithdrawnGenerateTsv:
         headers_line = tsv_lines[0]
         assert "VGNC_ID" in headers_line
         assert "STATUS" in headers_line
-        assert "\t".join(generator.get_headers("txt")) == headers_line
+        # Headers should end with newline
+        assert headers_line.endswith("\n")
+        # Strip newline for comparison
+        assert "\t".join(generator.get_headers("txt")) == headers_line.rstrip("\n")
 
     def test_withdrawn_data_rows_joined_with_tabs(self) -> None:
         """Test that withdrawn data fields are joined with TAB delimiter."""

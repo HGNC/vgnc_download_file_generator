@@ -213,9 +213,12 @@ def main(
 
         # Initialize GCS writer
         console.print("[dim]Initializing GCS writer...[/dim]")
+        if config.gcs.path_prefix:
+            console.print(f"[dim]Using GCS path prefix: {config.gcs.path_prefix}[/dim]")
         gcs_writer = GCSStreamWriter(
             bucket_name=config.gcs.bucket_name,
             project_id=config.gcs.project_id,
+            path_prefix=config.gcs.path_prefix,
         )
 
         # Parse species and get display name from database
@@ -287,6 +290,13 @@ def main(
             # Determine content type
             content_type = "text/tab-separated-values" if fmt == "tsv" else "application/json"
 
+            # Compression is only applied when explicitly requested via --compress flag
+            should_compress = compress
+
+            # Show compression status
+            if should_compress:
+                console.print("[dim]  (compressed)[/dim]")
+
             if fmt == "tsv":
                 # Check if TSV generator has data before opening GCS stream
                 row_iterator = iter(generator.generate_tsv_rows())
@@ -303,7 +313,7 @@ def main(
                     continue
 
                 # Stream TSV directly to GCS
-                with gcs_writer.open_write_stream(filename, content_type, compress=compress) as f:
+                with gcs_writer.open_write_stream(filename, content_type, compress=should_compress) as f:
                     lines_written = 0
                     with Progress(
                         TextColumn("[progress.description]{task.description}"),
@@ -346,7 +356,7 @@ def main(
                     continue
 
                 # Stream JSON directly to GCS
-                with gcs_writer.open_write_stream(filename, content_type, compress=compress) as f:
+                with gcs_writer.open_write_stream(filename, content_type, compress=should_compress) as f:
                     rows_written = 0
                     with Progress(
                         TextColumn("[progress.description]{task.description}"),

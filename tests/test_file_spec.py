@@ -195,8 +195,8 @@ class TestGcsPathMethod:
         )
 
         path = spec.gcs_path()
-        # Expected: json/cow/locus_types/cow_gene_with_protein_product_All.json
-        # (spaces converted to underscores for clean URLs)
+        # Expected: json/cattle/locus_types/cattle_gene_with_protein_product_All.json
+        # (spaces converted to underscores and lowercased for clean URLs)
         assert "json/" in path
         assert "cattle/" in path
         assert "locus_types/" in path
@@ -215,8 +215,8 @@ class TestGcsPathMethod:
         )
 
         path = spec.gcs_path()
-        # Expected: tsv/cow/locus_types/cow_gene_with_protein_product_All.txt
-        # (spaces converted to underscores for clean URLs)
+        # Expected: tsv/cattle/locus_types/cattle_gene_with_protein_product_All.txt
+        # (spaces converted to underscores and lowercased for clean URLs)
         assert "tsv/" in path
         assert "cattle/" in path
         assert "locus_types/" in path
@@ -304,11 +304,11 @@ class TestGcsPathMethod:
         )
 
         path = spec.gcs_path()
-        # Expected format similar to locus_type
-        # (spaces and hyphens converted to underscores for clean URLs)
+        # Expected: json/cattle/locus_groups/cattle_protein_coding_gene_All.json
+        # (spaces and hyphens converted to underscores and lowercased for clean URLs)
         assert "json/" in path
         assert "cattle/" in path
-        assert "protein_coding_gene" in path.lower()
+        assert "protein_coding_gene_All.json" in path
 
     def test_locus_group_tsv_path(self) -> None:
         """Test GCS path for locus_group-specific TSV file."""
@@ -323,11 +323,11 @@ class TestGcsPathMethod:
         )
 
         path = spec.gcs_path()
-        # Expected format similar to locus_type but with tsv subdirectory
-        # (spaces and hyphens converted to underscores for clean URLs)
+        # Expected: tsv/cattle/locus_groups/cattle_protein_coding_gene_All.txt
+        # (spaces and hyphens converted to underscores and lowercased for clean URLs)
         assert "tsv/" in path
         assert "cattle/" in path
-        assert "protein_coding_gene" in path.lower()
+        assert "protein_coding_gene_All.txt" in path
 
     def test_locus_type_with_chromosome_json_path(self) -> None:
         """Test GCS path for locus_type-specific JSON file with chromosome filter."""
@@ -459,3 +459,268 @@ class TestSpeciesNameNormalization:
         assert "cattle/" in path
         assert "cow/" not in path
         assert "cattle_gene_with_protein_product_All.json" in path
+
+
+class TestAllSpeciesDirectory:
+    """Tests for 'All' species files that go in the all/ directory."""
+
+    def test_all_species_vgnc_public_root_level(self) -> None:
+        """Test GCS path for all species with no filters - should go at root level."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # All species files now go in the all/ directory
+        assert path == "tsv/all/all_vgnc_gene_set_All.txt"
+
+    def test_all_species_vgnc_public_json_root_level(self) -> None:
+        """Test GCS path for all species JSON file - should go in all/ directory."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # All species files now go in the all/ directory
+        assert path == "json/all/all_vgnc_gene_set_All.json"
+
+    def test_all_species_all_directory_tsv(self) -> None:
+        """Test GCS path for all/ directory TSV file."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # All species files now go in the all/ directory
+        assert path == "tsv/all/all_vgnc_gene_set_All.txt"
+
+    def test_all_species_all_directory_json(self) -> None:
+        """Test GCS path for all/ directory JSON file."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Also support: json/all/all_vgnc_gene_set_All.json (in all/ directory)
+        # This is an alternative path for the same data
+
+    def test_all_species_with_chromosome(self) -> None:
+        """Test GCS path for all species filtered by chromosome."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/all/all_vgnc_gene_set_chrX.txt
+        assert path == "tsv/all/all_vgnc_gene_set_chrX.txt"
+
+    def test_all_species_with_locus_type(self) -> None:
+        """Test GCS path for all species filtered by locus type."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # All species with locus type: all/locus_types/all_vgnc_gene_set_{locus_type}_All.txt
+        assert path == "tsv/all/locus_types/all_vgnc_gene_set_gene_with_protein_product_All.txt"
+
+    def test_all_species_with_locus_type_json(self) -> None:
+        """Test GCS path for all species JSON with locus type."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # All species with locus type: all/locus_types/all_vgnc_gene_set_{locus_type}_All.json
+        assert path == "json/all/locus_types/all_vgnc_gene_set_gene_with_protein_product_All.json"
+
+    def test_all_species_with_locus_group(self) -> None:
+        """Test GCS path for all species filtered by locus group."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group="protein-coding gene",
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # All species with locus group: all/locus_groups/all_vgnc_gene_set_{locus_group}_All.txt
+        assert path == "tsv/all/locus_groups/all_vgnc_gene_set_protein_coding_gene_All.txt"
+
+    def test_all_species_with_locus_type_and_chromosome(self) -> None:
+        """Test GCS path for all species with locus type and chromosome."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type="gene with protein product",
+            chromosome="1",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/all/locus_types/all_gene_with_protein_product_chr_1.txt
+        assert path == "tsv/all/locus_types/all_gene_with_protein_product_chr_1.txt"
+
+    def test_all_species_with_locus_group_and_chromosome(self) -> None:
+        """Test GCS path for all species with locus group and chromosome."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group="protein-coding gene",
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Expected: json/all/locus_groups/all_protein_coding_gene_chr_X.json
+        assert path == "json/all/locus_groups/all_protein_coding_gene_chr_X.json"
+
+    def test_all_species_vgnc_withdrawn(self) -> None:
+        """Test GCS path for all species withdrawn entries."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_withdrawn",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # All species withdrawn files use all/ directory with all_vgnc_gene_set_All.txt
+        assert path == "tsv/all/all_vgnc_gene_set_All.txt"
+
+    def test_all_species_ensembl_still_special(self) -> None:
+        """Test that Ensembl mapping still uses special path for all species."""
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_ensembl",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Ensembl still uses special path
+        assert path == "ensembl/VGNC_to_Ensembl_mapping.txt"
+
+
+class TestIndividualSpeciesAllChromosomes:
+    """Tests for individual species files containing all chromosomes."""
+
+    def test_individual_species_all_chromosomes_tsv(self) -> None:
+        """Test GCS path for individual species with all chromosomes."""
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cattle",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Expected: tsv/cattle/cattle_vgnc_gene_set_All.txt
+        assert path == "tsv/cattle/cattle_vgnc_gene_set_All.txt"
+
+    def test_individual_species_all_chromosomes_json(self) -> None:
+        """Test GCS path for individual species JSON with all chromosomes."""
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cattle",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Expected: json/cattle/cattle_vgnc_gene_set_All.json
+        assert path == "json/cattle/cattle_vgnc_gene_set_All.json"
+
+    def test_cow_normalizes_to_cattle_all_chromosomes(self) -> None:
+        """Test that cow species normalizes to cattle in All filename."""
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cow",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        path = spec.gcs_path()
+        # Should use cattle in path
+        assert path == "tsv/cattle/cattle_vgnc_gene_set_All.txt"
+
+    def test_multi_word_species_all_chromosomes(self) -> None:
+        """Test GCS path for multi-word species with all chromosomes."""
+        spec = FileSpec(
+            species_id=9593,
+            species_name="Bolivian squirrel monkey",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        path = spec.gcs_path()
+        # Expected: json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.json
+        assert path == "json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.json"
+

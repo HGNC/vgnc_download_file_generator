@@ -36,7 +36,10 @@ class TestVgncPublicGenerateTsv:
         headers_line = tsv_lines[0]
         assert "vgnc_id" in headers_line
         assert "symbol" in headers_line
-        assert "\t".join(generator.get_headers("txt")) == headers_line
+        # Headers should end with newline
+        assert headers_line.endswith("\n")
+        # Strip newline for comparison
+        assert "\t".join(generator.get_headers("txt")) == headers_line.rstrip("\n")
 
     def test_generate_tsv_rows_joins_fields_with_tabs(self) -> None:
         """Test that fields are joined with TAB delimiter."""
@@ -200,3 +203,46 @@ class TestVgncPublicGenerateTsv:
         data_line = tsv_lines[1]
         assert "CAFÉ" in data_line
         assert "Café Gene" in data_line
+
+    def test_generate_tsv_rows_includes_newlines(self) -> None:
+        """Test that each TSV row ends with a newline character for proper line separation."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+
+        generator = VgncPublic(
+            db=db,
+            species=species,
+            chromosome=None,
+            locus_group=None,
+            locus_type=None,
+        )
+
+        # Mock stream_rows to return multiple rows
+        test_data = [
+            [{"vgnc_id": "VGNC:1", "symbol": "GENE1", "name": "Gene 1"}],
+            [{"vgnc_id": "VGNC:2", "symbol": "GENE2", "name": "Gene 2"}],
+        ]
+
+        def mock_stream_rows(chunk_size=5000):  # noqa: ARG001
+            return iter(test_data)
+
+        generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
+
+        # Generate TSV rows
+        tsv_lines = list(generator.generate_tsv_rows())
+
+        # Each line should end with a newline character
+        assert len(tsv_lines) == 3, "Should have header + 2 data rows"
+        assert tsv_lines[0].endswith("\n"), "Header row should end with newline"
+        assert tsv_lines[1].endswith("\n"), "First data row should end with newline"
+        assert tsv_lines[2].endswith("\n"), "Second data row should end with newline"
+
+        # Verify proper line separation when concatenated
+        combined = "".join(tsv_lines)
+        split_lines = combined.split("\n")
+        # Should have 4 lines: header, data1, data2, and empty string from trailing newline
+        assert len(split_lines) == 4
+        assert split_lines[0].startswith("vgnc_id")
+        assert "VGNC:1" in split_lines[1]
+        assert "VGNC:2" in split_lines[2]
+        assert split_lines[3] == ""  # Trailing newline produces empty string

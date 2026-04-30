@@ -7,6 +7,85 @@ from vgnc_download_file_generator.generators.vgnc_public import VgncPublic
 from vgnc_download_file_generator.models.species import SpeciesInfo
 
 
+class TestVgncPublicGenerateFilename:
+    """Tests for VgncPublic.generate_filename() method."""
+
+    def test_all_species_generates_root_level_tsv_path(self) -> None:
+        """Test that 'All' species generates tsv/all/all_vgnc_gene_set_All.txt path."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id="All", display_name="All", is_live="Y")  # type: ignore[arg-type]
+
+        generator = VgncPublic(
+            db=db,
+            species=species,
+            chromosome=None,
+            locus_group=None,
+            locus_type=None,
+        )
+
+        filename = generator.generate_filename("txt")
+
+        # Should generate all/ directory path for all species
+        assert filename == "tsv/all/all_vgnc_gene_set_All.txt"
+
+    def test_all_species_generates_root_level_json_path(self) -> None:
+        """Test that 'All' species generates json/all/all_vgnc_gene_set_All.json path."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id="All", display_name="All", is_live="Y")  # type: ignore[arg-type]
+
+        generator = VgncPublic(
+            db=db,
+            species=species,
+            chromosome=None,
+            locus_group=None,
+            locus_type=None,
+        )
+
+        filename = generator.generate_filename("json")
+
+        # Should generate all/ directory path for all species
+        assert filename == "json/all/all_vgnc_gene_set_All.json"
+
+    def test_all_species_does_not_generate_ensembl_path(self) -> None:
+        """Test that VgncPublic with 'All' species does NOT generate ensembl path."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id="All", display_name="All", is_live="Y")  # type: ignore[arg-type]
+
+        generator = VgncPublic(
+            db=db,
+            species=species,
+            chromosome=None,
+            locus_group=None,
+            locus_type=None,
+        )
+
+        filename = generator.generate_filename("txt")
+
+        # Should NOT be the Ensembl mapping path
+        assert filename != "ensembl/VGNC_to_Ensembl_mapping.txt"
+        # Should not contain 'ensembl' at all
+        assert "ensembl" not in filename.lower()
+
+    def test_individual_species_chromosome_generates_correct_path(self) -> None:
+        """Test that individual species with chromosome generates correct path."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9913, display_name="cattle", is_live="Y")
+
+        generator = VgncPublic(
+            db=db,
+            species=species,
+            chromosome="X",
+            locus_group=None,
+            locus_type=None,
+        )
+
+        filename = generator.generate_filename("txt")
+
+        # Should generate species-specific chromosome path
+        assert "tsv/cattle/" in filename
+        assert "chr_X.txt" in filename
+
+
 class TestVgncPublicGetHeaders:
     """Tests for VgncPublic.get_headers() method."""
 
@@ -41,8 +120,8 @@ class TestVgncPublicGetHeaders:
         assert "alias_name" in headers
         assert "prev_symbol" in headers
         assert "prev_name" in headers
-        assert "gene_family" in headers
-        assert "gene_family_id" in headers
+        assert "gene_group" in headers
+        assert "gene_group_id" in headers
         assert "date_approved_reserved" in headers
         assert "date_symbol_changed" in headers
         assert "date_name_changed" in headers

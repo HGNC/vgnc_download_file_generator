@@ -19,6 +19,9 @@ class VgncWithdrawn(BaseFileGenerator):
     (Entry Withdrawn or Symbol Withdrawn).
     """
 
+    # File type identifier for this generator
+    _FILE_TYPE: str = "vgnc_withdrawn"
+
     # Standard withdrawn headers (uppercase underscore format)
     _STANDARD_HEADERS: list[str] = [
         "VGNC_ID",
@@ -203,8 +206,8 @@ class VgncWithdrawn(BaseFileGenerator):
         # Get headers for TSV output
         headers = self.get_headers("txt")
 
-        # Yield header row joined by tabs
-        yield "\t".join(headers)
+        # Yield header row joined by tabs, with newline at end
+        yield "\t".join(headers) + "\n"
 
         # Stream data rows and yield them as TSV
         for chunk in self.stream_rows():
@@ -215,8 +218,8 @@ class VgncWithdrawn(BaseFileGenerator):
                     str(row_dict.get(header, "")) if row_dict.get(header) is not None else ""
                     for header in headers
                 ]
-                # Yield the row joined by tabs
-                yield "\t".join(values)
+                # Yield the row joined by tabs, with newline at end
+                yield "\t".join(values) + "\n"
 
     def generate_json_rows(self) -> Generator[str]:
         """Generate JSON-formatted rows as strings.

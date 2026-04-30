@@ -157,7 +157,10 @@ class TestVgncEnsemblGenerateTsv:
         headers_line = tsv_lines[0]
         assert "VGNC ID" in headers_line
         assert "Ensembl Gene ID" in headers_line
-        assert "\t".join(generator.get_headers("txt")) == headers_line
+        # Headers should end with newline
+        assert headers_line.endswith("\n")
+        # Strip newline for comparison
+        assert "\t".join(generator.get_headers("txt")) == headers_line.rstrip("\n")
 
     def test_generate_tsv_rows_joins_fields_with_tabs(self) -> None:
         """Test that fields are joined with TAB delimiter."""

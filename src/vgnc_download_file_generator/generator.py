@@ -28,7 +28,11 @@ class BaseFileGenerator(ABC):
         chromosome: Optional chromosome filter
         locus_group: Optional locus group filter
         locus_type: Optional locus type filter
+        _FILE_TYPE: The file type identifier for this generator (overridden by subclasses)
     """
+
+    # Subclasses should override this with their file type
+    _FILE_TYPE: str = "vgnc_public"
 
     def __init__(
         self,
@@ -107,11 +111,8 @@ class BaseFileGenerator(ABC):
             >>> generator.generate_filename("txt")
             'ensembl/VGNC_to_Ensembl_mapping.txt'
         """
-        # Determine file type based on species
-        if self.species.taxon_id == "All" or self.species.display_name == "All":  # type: ignore[comparison-overlap]
-            file_type = "vgnc_ensembl"
-        else:
-            file_type = "vgnc_public"
+        # Use the generator's file type from class attribute
+        file_type = self._FILE_TYPE
 
         # Create FileSpec and get path
         spec = FileSpec(

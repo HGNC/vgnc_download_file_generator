@@ -20,6 +20,9 @@ class VgncPublic(BaseFileGenerator):
     and Zebrafish (taxon_id 9913).
     """
 
+    # File type identifier for this generator
+    _FILE_TYPE: str = "vgnc_public"
+
     # Standard 22 TSV headers
     _STANDARD_HEADERS: list[str] = [
         "vgnc_id",
@@ -34,8 +37,8 @@ class VgncPublic(BaseFileGenerator):
         "alias_name",
         "prev_symbol",
         "prev_name",
-        "gene_family",
-        "gene_family_id",
+        "gene_group",
+        "gene_group_id",
         "date_approved_reserved",
         "date_symbol_changed",
         "date_name_changed",
@@ -66,8 +69,8 @@ class VgncPublic(BaseFileGenerator):
             "locus_group": "locus_group",
             "locus_type": "locus_type",
             "chromosome": "location",
-            "gene_family": "gene_family",
-            "gene_family_id": "gene_family_id",
+            "gene_family": "gene_group",
+            "gene_family_id": "gene_group_id",
             "ncbi_gene_id": "ncbi_id",
             "ensembl_gene_id": "ensembl_gene_id",
             "uniprot_ids": "uniprot_ids",
@@ -257,8 +260,8 @@ class VgncPublic(BaseFileGenerator):
         # Get headers for TSV output
         headers = self.get_headers("txt")
 
-        # Yield header row joined by tabs
-        yield "\t".join(headers)
+        # Yield header row joined by tabs, with newline at end
+        yield "\t".join(headers) + "\n"
 
         # Stream data rows and yield them as TSV
         for chunk in self.stream_rows():
@@ -269,8 +272,8 @@ class VgncPublic(BaseFileGenerator):
                     str(row_dict.get(header, "")) if row_dict.get(header) is not None else ""
                     for header in headers
                 ]
-                # Yield the row joined by tabs
-                yield "\t".join(values)
+                # Yield the row joined by tabs, with newline at end
+                yield "\t".join(values) + "\n"
 
     def generate_json_rows(self) -> Generator[str]:
         """Generate JSON-formatted rows as strings.

@@ -87,10 +87,13 @@ class GCSConfig(BaseModel):
     Attributes:
         bucket_name: GCS bucket name for file uploads
         project_id: GCP project ID
+        path_prefix: Optional path prefix for all GCS objects (e.g., "vgnc/")
+            If blank or None, no prefix is added.
     """
 
     bucket_name: str = Field(description="GCS bucket name for file uploads")
     project_id: str = Field(description="GCP project ID")
+    path_prefix: str = Field(default="", description="Optional path prefix for all GCS objects")
 
 
 class RuntimeConfig(BaseModel):
@@ -141,6 +144,7 @@ class Settings(BaseSettings):
     # GCS settings
     gcs_bucket_name: str
     gcs_project_id: str
+    gcs_path_prefix: str = ""  # Optional path prefix like "vgnc/" or "" for no prefix
 
     # Runtime settings
     runtime_chunk_size: int = 5000
@@ -166,7 +170,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="APP_",
-        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -188,6 +191,7 @@ class Settings(BaseSettings):
             gcs=GCSConfig(
                 bucket_name=self.gcs_bucket_name,
                 project_id=self.gcs_project_id,
+                path_prefix=self.gcs_path_prefix,
             ),
             runtime=RuntimeConfig(
                 chunk_size=self.runtime_chunk_size,
@@ -202,6 +206,10 @@ def get_settings() -> AppConfig:
     Database credentials are loaded from environment variables if available.
     If not, falls back to GCP Secret Manager (if configured).
 
+    Environment variables can override Secret Manager for connection details
+    (host, port, dbname) while still using credentials (user, password) from
+    Secret Manager. This is useful for local development with Cloud SQL Proxy.
+
     Returns:
         AppConfig instance loaded from environment variables or Secret Manager
 
@@ -210,6 +218,15 @@ def get_settings() -> AppConfig:
         ValueError: If Secret Manager is configured but credentials are invalid
     """
     settings = Settings()  # type: ignore[call-arg]
+
+    # Save environment override values before loading from Secret Manager
+    # These allow overriding connection details (host, port) while keeping
+    # credentials (user, password) from Secret Manager
+    env_overrides = {
+        "dbhost": settings.database_dbhost,
+        "dbport": settings.database_dbport,
+        "dbname": settings.database_dbname,
+    }
 
     # Check if database credentials are missing from environment
     db_from_env = all([
@@ -234,14 +251,24 @@ def get_settings() -> AppConfig:
                     project_id=settings.gcs_project_id,
                 )
 
-                # Override settings with Secret Manager values
-                settings.database_dbhost = db_config.dbhost
+                # Load credentials from Secret Manager
                 settings.database_dbuser = db_config.dbuser
                 settings.database_dbpasswd = db_config.dbpasswd
-                settings.database_dbport = db_config.dbport
-                settings.database_dbname = db_config.dbname
 
+                # For connection details, use environment overrides if set,
+                # otherwise use values from Secret Manager
+                settings.database_dbhost = env_overrides["dbhost"] if env_overrides["dbhost"] else db_config.dbhost
+                settings.database_dbport = env_overrides["dbport"] if env_overrides["dbport"] else db_config.dbport
+                settings.database_dbname = env_overrides["dbname"] if env_overrides["dbname"] else db_config.dbname
+
+                # Log what we're using
                 logger.info("Successfully loaded database credentials from Secret Manager")
+                if env_overrides["dbhost"]:
+                    logger.info("Using environment override for dbhost: %s", settings.database_dbhost)
+                if env_overrides["dbport"]:
+                    logger.info("Using environment override for dbport: %s", settings.database_dbport)
+                if env_overrides["dbname"]:
+                    logger.info("Using environment override for dbname: %s", settings.database_dbname)
             except Exception as e:
                 logger.error("Failed to load credentials from Secret Manager: %s", e)
                 raise ValueError(

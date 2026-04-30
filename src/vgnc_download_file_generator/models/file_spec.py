@@ -140,40 +140,77 @@ class FileSpec:
         # Determine subdirectory based on file extension
         subdir = "json" if self.extension == "json" else "tsv"
 
+        # Handle "All" species specially
+        is_all_species = self.species_id == "All" or self.species_name == "All"
+
+        # Normalize species name for directory and filename
         normalized_name = _normalize_species_name(self.species_name)
+        species_dir = normalized_name
 
         # Build path based on filter criteria
         # Check locus_type first (highest priority)
         if self.locus_type is not None:
             # Convert spaces to underscores for clean URLs
-            locus_type_normalized = self.locus_type.replace(" ", "_")
+            locus_type_normalized = self.locus_type.replace(" ", "_").replace(",", "_").lower()
             if self.chromosome is not None:
-                # Locus type + chromosome: {species}_{locus_type}_chr_{chromosome}.{ext}
-                filename = f"{normalized_name}_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
+                # Locus type + chromosome
+                if is_all_species:
+                    # All species with locus type and chromosome: all/locus_types/
+                    filename = f"all_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
+                    return f"{subdir}/all/locus_types/{filename}"
+                else:
+                    filename = f"{species_dir}_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
+                    return f"{subdir}/{species_dir}/locus_types/{filename}"
             else:
-                # Locus type all chromosomes: {species}_{locus_type}_All.{ext}
-                filename = f"{normalized_name}_{locus_type_normalized}_All.{self.extension}"
-            return f"{subdir}/{normalized_name}/locus_types/{filename}"
+                # Locus type all chromosomes
+                if is_all_species:
+                    # All species with locus type: all/locus_types/all_vgnc_gene_set_{locus_type}_All.{ext}
+                    filename = f"all_vgnc_gene_set_{locus_type_normalized}_All.{self.extension}"
+                    return f"{subdir}/all/locus_types/{filename}"
+                else:
+                    filename = f"{species_dir}_{locus_type_normalized}_All.{self.extension}"
+                    return f"{subdir}/{species_dir}/locus_types/{filename}"
 
         # Check locus_group next
         if self.locus_group is not None:
-            # Convert spaces and hyphens to underscores for clean URLs
-            locus_group_normalized = self.locus_group.replace(" ", "_").replace("-", "_")
+            # Convert spaces and hyphens to underscores for clean URLs, lowercase
+            locus_group_normalized = self.locus_group.replace(" ", "_").replace("-", "_").replace(",", "_").lower()
             if self.chromosome is not None:
-                # Locus group + chromosome: {species}_{locus_group}_chr_{chromosome}.{ext}
-                filename = f"{normalized_name}_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
+                # Locus group + chromosome
+                if is_all_species:
+                    # All species with locus group and chromosome: all/locus_groups/
+                    filename = f"all_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
+                    return f"{subdir}/all/locus_groups/{filename}"
+                else:
+                    filename = f"{species_dir}_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
+                    return f"{subdir}/{species_dir}/locus_groups/{filename}"
             else:
-                # Locus group all chromosomes: {species}_{locus_group}_All.{ext}
-                filename = f"{normalized_name}_{locus_group_normalized}_All.{self.extension}"
-            return f"{subdir}/{normalized_name}/locus_groups/{filename}"
+                # Locus group all chromosomes
+                if is_all_species:
+                    # All species with locus group: all/locus_groups/all_vgnc_gene_set_{locus_group}_All.{ext}
+                    filename = f"all_vgnc_gene_set_{locus_group_normalized}_All.{self.extension}"
+                    return f"{subdir}/all/locus_groups/{filename}"
+                else:
+                    filename = f"{species_dir}_{locus_group_normalized}_All.{self.extension}"
+                    return f"{subdir}/{species_dir}/locus_groups/{filename}"
 
         # Chromosome-only (no locus filter)
         if self.chromosome is not None:
-            # Chromosome-specific file: {subdir}/{species}/{species}_vgnc_gene_set_chr_{chromosome}.{ext}
-            filename = f"{normalized_name}_vgnc_gene_set_chr_{self.chromosome}.{self.extension}"
-            return f"{subdir}/{normalized_name}/{filename}"
+            if is_all_species:
+                # All species with chromosome: {subdir}/all/all_vgnc_gene_set_chr{chromosome}.{ext}
+                filename = f"all_vgnc_gene_set_chr{self.chromosome}.{self.extension}"
+                return f"{subdir}/all/{filename}"
+            else:
+                # Individual species with chromosome: {subdir}/{species}/{species}_vgnc_gene_set_chr_{chromosome}.{ext}
+                filename = f"{normalized_name}_vgnc_gene_set_chr_{self.chromosome}.{self.extension}"
+                return f"{subdir}/{species_dir}/{filename}"
 
-        # Default: species-specific file with no chromosome filter
-        # This shouldn't normally happen in practice, but provide a sensible default
-        filename = f"{normalized_name}_all.{self.extension}"
-        return f"{subdir}/{normalized_name}/{filename}"
+        # Default: all chromosomes file (no chromosome, no locus filter)
+        if is_all_species:
+            # For All species with no filters, produce: all/all_vgnc_gene_set_All.{ext}
+            filename = f"all_vgnc_gene_set_All.{self.extension}"
+            return f"{subdir}/all/{filename}"
+        else:
+            # Individual species all chromosomes: {subdir}/{species}/{species}_vgnc_gene_set_All.{ext}
+            filename = f"{normalized_name}_vgnc_gene_set_All.{self.extension}"
+            return f"{subdir}/{species_dir}/{filename}"

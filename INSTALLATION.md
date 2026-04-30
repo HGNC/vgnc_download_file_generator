@@ -393,6 +393,37 @@ sudo apt install libmysqlclient-dev
 pip install mysqlclient
 ```
 
+### macOS: mysqlclient Library Path Issue
+
+On macOS with MySQL 9.x, mysqlclient may be built looking for `libmysqlclient.21.dylib` but MySQL 9.x provides `libmysqlclient.24.dylib`. This causes an `ImportError` when importing MySQLdb.
+
+**Fix using the provided script:**
+
+```bash
+# After installing mysqlclient, run the fix script
+python scripts/fix_mysqlclient.py
+
+# Or using uv
+uv run python scripts/fix_mysqlclient.py
+```
+
+This script uses `install_name_tool` to update the library path in the mysqlclient `.so` file.
+
+**You need to run this script again after:**
+- Running `uv sync` or `pip install` that reinstalls mysqlclient
+- Recreating your virtual environment
+- Updating mysqlclient version
+
+**Alternative: Use mysql-connector-python (pure Python, no C library):**
+
+```bash
+# In pyproject.toml, replace mysqlclient with:
+# dependencies = [
+#     "mysql-connector-python>=8.0",
+#     ...
+# ]
+```
+
 ### Import Errors
 
 ```bash

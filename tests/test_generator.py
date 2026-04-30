@@ -148,6 +148,9 @@ class TestGenerateFilenameMethod:
         """Test generate_filename for Ensembl files."""
 
         class ConcreteGenerator(BaseFileGenerator):
+            # Set file type for Ensembl generator
+            _FILE_TYPE: str = "vgnc_ensembl"
+
             def get_headers(self, extension: str) -> list[str]:  # noqa: ARG002
                 return []
 

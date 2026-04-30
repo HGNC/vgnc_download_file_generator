@@ -90,6 +90,7 @@ class GCSStreamWriter:
     Attributes:
         bucket_name: Name of the GCS bucket
         project_id: Google Cloud project ID
+        path_prefix: Optional path prefix for all GCS objects (e.g., "vgnc/")
         _client: GCS storage client
         _bucket: GCS bucket reference
     """
@@ -102,15 +103,18 @@ class GCSStreamWriter:
         ".gz": "application/gzip",
     }
 
-    def __init__(self, bucket_name: str, project_id: str) -> None:
+    def __init__(self, bucket_name: str, project_id: str, path_prefix: str = "") -> None:
         """Initialize the GCS writer.
 
         Args:
             bucket_name: Name of the GCS bucket for uploads
             project_id: Google Cloud project ID
+            path_prefix: Optional path prefix for all GCS objects (e.g., "vgnc/")
+                If blank, no prefix is added to paths.
         """
         self.bucket_name = bucket_name
         self.project_id = project_id
+        self.path_prefix = path_prefix
 
         # Initialize GCS storage client
         self._client = storage.Client(project=project_id)
@@ -136,6 +140,26 @@ class GCSStreamWriter:
         # Return mapped content-type or default
         return self.CONTENT_TYPE_MAP.get(ext, "application/octet-stream")
 
+    def _apply_path_prefix(self, path: str) -> str:
+        """Apply the path prefix to a GCS object path.
+
+        Args:
+            path: Original GCS object path
+
+        Returns:
+            Path with prefix applied. If path_prefix is empty, returns path unchanged.
+            Ensures no double slashes if path already starts with /.
+        """
+        if not self.path_prefix:
+            return path
+
+        # Remove leading slash from path if present
+        clean_path = path.lstrip("/")
+        # Remove trailing slash from prefix if present
+        clean_prefix = self.path_prefix.rstrip("/")
+
+        return f"{clean_prefix}/{clean_path}"
+
     @contextmanager
     def open_write_stream(
         self, path: str, content_type: str | None = None, compress: bool = False
@@ -150,16 +174,19 @@ class GCSStreamWriter:
             content_type: MIME content type (e.g., "text/plain", "application/json").
                 If None, will be auto-detected from file extension.
             compress: Whether to apply gzip compression. When True, content-type
-                will be set to "application/gzip" regardless of the file extension.
+                will be set to "application/gzip" and data will be compressed.
 
         Yields:
             File-like object for streaming writes
 
         Example:
-            >>> writer = GCSStreamWriter("my-bucket", "my-project")
+            >>> writer = GCSStreamWriter("my-bucket", "my-project", path_prefix="vgnc/")
             >>> with writer.open_write_stream("data.json", "application/json") as f:
             ...     f.write('{"key": "value"}')
         """
+        # Apply path prefix
+        full_path = self._apply_path_prefix(path)
+
         # Auto-detect content-type if not provided
         if content_type is None:
             content_type = self._detect_content_type(path)
@@ -169,21 +196,62 @@ class GCSStreamWriter:
             content_type = "application/gzip"
 
         # Get blob reference
-        blob = self._bucket.blob(path)
+        blob = self._bucket.blob(full_path)
 
         # Set content type before opening stream
         blob.content_type = content_type
 
-        # Open streaming upload with retry logic
-        stream = self._open_blob_with_retry(blob)
+        # For compressed files, we need to use a different approach
+        # since GCS blob.open() doesn't support transparent gzip compression
+        if compress:
+            # Open blob in binary mode for direct upload
+            import tempfile
 
-        try:
-            yield stream
-        finally:
-            # Ensure stream is closed on exit
-            stream.close()
-            # Note: Bucket uses uniform bucket-level access
-            # Public access is granted via IAM policy, not object ACLs
+            with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".gz") as tmp_file:
+                tmp_path = tmp_file.name
+
+            try:
+                # Create a gzip file wrapper
+                with gzip.open(tmp_path, "wb") as gzip_file:
+                    # Yield a wrapper that writes to the gzip file
+                    class _GzipWriteWrapper:
+                        """Wrapper that writes to gzip file."""
+
+                        def __init__(self, gzip_fp: Any) -> None:
+                            self._gzip_fp = gzip_fp
+
+                        def write(self, data: str) -> int:
+                            """Write data to gzip file."""
+                            bytes_data = data.encode("utf-8")
+                            self._gzip_fp.write(bytes_data)
+                            return len(data)
+
+                        def close(self) -> None:
+                            """Close the gzip file."""
+                            try:
+                                self._gzip_fp.close()
+                            except Exception:
+                                pass
+
+                    wrapper = _GzipWriteWrapper(gzip_file)
+                    yield wrapper
+            finally:
+                # Upload the compressed file to GCS
+                try:
+                    blob.upload_from_filename(tmp_path, content_type="application/gzip")
+                finally:
+                    # Clean up temp file
+                    import pathlib
+                    pathlib.Path(tmp_path).unlink(missing_ok=True)
+        else:
+            # Non-compressed: use streaming upload
+            stream = self._open_blob_with_retry(blob)
+            try:
+                yield stream
+            finally:
+                stream.close()
+        # Note: Bucket uses uniform bucket-level access
+        # Public access is granted via IAM policy, not object ACLs
 
     @retry_with_exponential_backoff(max_retries=3, initial_backoff=1, multiplier=2)
     def _open_blob_with_retry(self, blob: storage.Blob) -> Any:
@@ -218,9 +286,12 @@ class GCSStreamWriter:
                 When True, content-type will be set to "application/gzip".
 
         Example:
-            >>> writer = GCSStreamWriter("my-bucket", "my-project")
+            >>> writer = GCSStreamWriter("my-bucket", "my-project", path_prefix="vgnc/")
             >>> writer.upload_from_file("/tmp/data.json", "json/data.json")
         """
+        # Apply path prefix
+        full_path = self._apply_path_prefix(gcs_path)
+
         # Auto-detect content-type if not provided
         if content_type is None:
             content_type = self._detect_content_type(gcs_path)
@@ -238,7 +309,7 @@ class GCSStreamWriter:
             upload_path = source_path
 
         # Get blob reference
-        blob = self._bucket.blob(gcs_path)
+        blob = self._bucket.blob(full_path)
 
         # Set content type
         blob.content_type = content_type
@@ -267,30 +338,38 @@ class GCSStreamWriter:
 
         This method creates a copy of a file from its new location (e.g., with "cattle")
         to the legacy location (e.g., with "cow") for backward compatibility.
+        The path prefix is applied to both source and destination paths.
 
         Args:
             source_path: The source file path (e.g., "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt")
             legacy_species: The legacy species name to replace in the path (e.g., "cow")
 
         Example:
-            >>> writer = GCSStreamWriter("my-bucket", "my-project")
+            >>> writer = GCSStreamWriter("my-bucket", "my-project", path_prefix="vgnc/")
             >>> writer.create_backward_compatibility_copy(
             ...     "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt",
             ...     "cow"
             ... )
-            # Creates copy at: tsv/cow/cow_vgnc_gene_set_chr_X.txt
+            # Creates copy at: vgnc/tsv/cow/cow_vgnc_gene_set_chr_X.txt
         """
+        # Apply path prefix to source
+        full_source_path = self._apply_path_prefix(source_path)
+
         # Replace all occurrences of the normalized species name in the path
         # with the legacy species name
         dest_path = source_path.replace("/cattle/", f"/{legacy_species}/")
         dest_path = dest_path.replace("cattle_", f"{legacy_species}_")
 
-        # Get source and destination blobs
-        source_blob = self._bucket.blob(source_path)
-        dest_blob = self._bucket.blob(dest_path)
+        # Apply path prefix to destination
+        full_dest_path = self._apply_path_prefix(dest_path)
 
-        # Copy the source blob to the destination (rewrite operation)
+        # Get source and destination blobs
+        source_blob = self._bucket.blob(full_source_path)
+        dest_blob = self._bucket.blob(full_dest_path)
+
+        # Copy the source blob to the destination (download and re-upload)
         # This creates a backward compatibility link without using actual symlinks
-        source_blob.copy_to(dest_blob, timeout=300)
+        source_bytes = source_blob.download_as_bytes()
+        dest_blob.upload_from_string(source_bytes, content_type=source_blob.content_type)
         # Note: Bucket uses uniform bucket-level access
         # Public access is granted via IAM policy, not object ACLs

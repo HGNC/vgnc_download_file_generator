@@ -745,7 +745,7 @@ class TestBackwardCompatibilityCopy:
 
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     def test_copy_rewrites_cattle_path_to_cow_path(self, mock_storage) -> None:
-        """Test that the blob.copy_to method is called to create the copy."""
+        """Test that the blob download/upload is called to create the copy."""
         mock_client = MagicMock()
         mock_storage.Client.return_value = mock_client
         mock_bucket = MagicMock()
@@ -769,8 +769,9 @@ class TestBackwardCompatibilityCopy:
             legacy_species="cow"
         )
 
-        # Verify copy_to was called with the correct source path
-        source_blob.copy_to.assert_called_once()
+        # Verify download and upload were called (new implementation)
+        source_blob.download_as_bytes.assert_called_once()
+        dest_blob.upload_from_string.assert_called_once()
 
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     def test_handles_subdirectory_paths_correctly(self, mock_storage) -> None:
@@ -802,6 +803,144 @@ class TestBackwardCompatibilityCopy:
         expected_calls = [
             "json/cattle/locus_types/cattle_gene_with_protein_product_All.json",
             "json/cow/locus_types/cow_gene_with_protein_product_All.json"
+        ]
+        actual_calls = [call[0][0] for call in mock_bucket.blob.call_args_list]
+        assert actual_calls == expected_calls
+
+
+class TestPathPrefix:
+    """Tests for GCS path prefix functionality."""
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_applies_prefix_to_blob_path(self, mock_storage) -> None:
+        """Test that path prefix is applied to blob paths."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(
+            bucket_name="test-bucket",
+            project_id="test-project",
+            path_prefix="vgnc/"
+        )
+
+        with writer.open_write_stream("tsv/file.txt", "text/plain"):
+            pass
+
+        # Verify the full path with prefix was used
+        mock_bucket.blob.assert_called_once_with("vgnc/tsv/file.txt")
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_no_prefix_when_empty_string(self, mock_storage) -> None:
+        """Test that empty prefix doesn't add anything to path."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(
+            bucket_name="test-bucket",
+            project_id="test-project",
+            path_prefix=""
+        )
+
+        with writer.open_write_stream("tsv/file.txt", "text/plain"):
+            pass
+
+        # Verify path was used without prefix
+        mock_bucket.blob.assert_called_once_with("tsv/file.txt")
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_handles_leading_slash_correctly(self, mock_storage) -> None:
+        """Test that leading slash in path is handled correctly with prefix."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(
+            bucket_name="test-bucket",
+            project_id="test-project",
+            path_prefix="vgnc/"
+        )
+
+        with writer.open_write_stream("/tsv/file.txt", "text/plain"):
+            pass
+
+        # Verify leading slash is stripped and prefix is applied
+        mock_bucket.blob.assert_called_once_with("vgnc/tsv/file.txt")
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_handles_trailing_slash_in_prefix(self, mock_storage) -> None:
+        """Test that trailing slash in prefix is handled correctly."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(
+            bucket_name="test-bucket",
+            project_id="test-project",
+            path_prefix="vgnc/"
+        )
+
+        with writer.open_write_stream("tsv/file.txt", "text/plain"):
+            pass
+
+        # Verify no double slashes
+        mock_bucket.blob.assert_called_once_with("vgnc/tsv/file.txt")
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_applies_prefix_in_backward_compatibility_copy(self, mock_storage) -> None:
+        """Test that path prefix is applied to both source and dest in backward compatibility copy."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+
+        source_blob = MagicMock()
+        dest_blob = MagicMock()
+
+        def blob_side_effect(path):
+            if "cattle" in path:
+                return source_blob
+            else:
+                return dest_blob
+
+        mock_bucket.blob.side_effect = blob_side_effect
+
+        writer = GCSStreamWriter(
+            bucket_name="test-bucket",
+            project_id="test-project",
+            path_prefix="vgnc/"
+        )
+
+        writer.create_backward_compatibility_copy(
+            source_path="tsv/cattle/cattle_file.txt",
+            legacy_species="cow"
+        )
+
+        # Verify both paths have prefix applied
+        expected_calls = [
+            "vgnc/tsv/cattle/cattle_file.txt",
+            "vgnc/tsv/cow/cow_file.txt"
         ]
         actual_calls = [call[0][0] for call in mock_bucket.blob.call_args_list]
         assert actual_calls == expected_calls

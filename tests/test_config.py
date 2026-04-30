@@ -178,6 +178,13 @@ class TestSettingsLoading:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test ValueError raised when database credentials are missing and Secret Manager not configured."""
+        # Clear any database credentials that might be set in the environment
+        monkeypatch.delenv("APP_DATABASE_DBHOST", raising=False)
+        monkeypatch.delenv("APP_DATABASE_DBUSER", raising=False)
+        monkeypatch.delenv("APP_DATABASE_DBPASSWD", raising=False)
+        monkeypatch.delenv("APP_DATABASE_DBPASS", raising=False)
+        monkeypatch.delenv("APP_DATABASE_DBPORT", raising=False)
+        monkeypatch.delenv("APP_DATABASE_DBNAME", raising=False)
         # Set GCS and runtime, but missing database credentials
         monkeypatch.setenv("APP_GCS_BUCKET_NAME", "test-bucket")
         monkeypatch.setenv("APP_GCS_PROJECT_ID", "test-project")

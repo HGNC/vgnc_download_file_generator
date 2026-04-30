@@ -322,3 +322,92 @@ class TestCLIErrorHandling:
         # Should show error and traceback
         assert result.exit_code == 1
         assert "Error:" in result.output
+
+
+class TestCLIForcedCompression:
+    """Tests for forced compression of all/ directory files."""
+
+    def test_root_all_species_tsv_forces_compression(self) -> None:
+        """Test that all/ directory TSV files are always compressed."""
+        from vgnc_download_file_generator.models.file_spec import FileSpec
+
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="tsv",  # CLI passes "tsv" format
+        )
+
+        # Should generate all/ directory path with .tsv extension
+        filename = spec.gcs_path()
+        assert filename == "tsv/all/all_vgnc_gene_set_All.tsv"
+
+        # This filename should trigger forced compression (contains /all/)
+        is_all_directory_file = "/all/" in filename
+        assert is_all_directory_file is True
+
+    def test_root_all_species_json_forces_compression(self) -> None:
+        """Test that all/ directory JSON files are always compressed."""
+        from vgnc_download_file_generator.models.file_spec import FileSpec
+
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="json",
+        )
+
+        # Should generate all/ directory path
+        filename = spec.gcs_path()
+        assert filename == "json/all/all_vgnc_gene_set_All.json"
+
+        # This filename should trigger forced compression (contains /all/)
+        is_all_directory_file = "/all/" in filename
+        assert is_all_directory_file is True
+
+    def test_other_all_species_files_not_forced_compression(self) -> None:
+        """Test that other All species files in all/ subdirs are compressed (they also have /all/)."""
+        from vgnc_download_file_generator.models.file_spec import FileSpec
+
+        # All species with chromosome filter (still in all/ directory)
+        spec = FileSpec(
+            species_id="All",
+            species_name="All",
+            locus_group=None,
+            locus_type=None,
+            chromosome="X",
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        filename = spec.gcs_path()
+        # This filename should trigger forced compression (contains /all/)
+        is_all_directory_file = "/all/" in filename
+        assert is_all_directory_file is True
+        assert filename == "tsv/all/all_vgnc_gene_set_chrX.txt"
+
+    def test_individual_species_files_not_forced_compression(self) -> None:
+        """Test that individual species files are not forced compressed."""
+        from vgnc_download_file_generator.models.file_spec import FileSpec
+
+        spec = FileSpec(
+            species_id=9913,
+            species_name="cattle",
+            locus_group=None,
+            locus_type=None,
+            chromosome=None,
+            file_type="vgnc_public",
+            extension="txt",
+        )
+
+        filename = spec.gcs_path()
+        # Should NOT trigger forced compression (no /all/)
+        is_all_directory_file = "/all/" in filename
+        assert is_all_directory_file is False
+        assert filename == "tsv/cattle/cattle_vgnc_gene_set_All.txt"

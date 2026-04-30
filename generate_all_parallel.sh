@@ -44,18 +44,27 @@ VERSION="2.0.0"
 # Directory containing this script (for finding helper scripts)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Set DYLD_LIBRARY_PATH for MySQL client library on macOS
-# This is needed because the Python MySQLdb module needs to find libmysqlclient.21.dylib
-# This must be done before defining CLI_CMD so subprocesses inherit it
+# Always run from the script directory so that .env (loaded by the Python CLI)
+# and helper scripts are reliably found regardless of the caller's cwd.
+cd "${SCRIPT_DIR}"
+
+# Set DYLD_LIBRARY_PATH for MySQL client library on macOS (only if needed)
+# This is needed because the Python MySQLdb module needs to find libmysqlclient.dylib
+# Only set if the correct version exists, otherwise let the system use its default
 if [[ "$(uname)" == "Darwin" ]]; then
     # Try common MySQL installation paths
-    if [[ -f "/usr/local/mysql-8.0.42-macos15-arm64/lib/libmysqlclient.21.dylib" ]]; then
-        export DYLD_LIBRARY_PATH="/usr/local/mysql-8.0.42-macos15-arm64/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-    elif [[ -f "/opt/homebrew/opt/mysql-client/lib/libmysqlclient.21.dylib" ]]; then
-        export DYLD_LIBRARY_PATH="/opt/homebrew/opt/mysql-client/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-    elif [[ -f "/usr/local/mysql/lib/libmysqlclient.21.dylib" ]]; then
-        export DYLD_LIBRARY_PATH="/usr/local/mysql/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-    fi
+    for mysql_lib_path in \
+        "/opt/homebrew/opt/mysql-client/lib" \
+        "/usr/local/mysql/lib"
+    do
+        if [[ -d "${mysql_lib_path}" ]]; then
+            # Check for libmysqlclient.21.dylib specifically (the version MySQLdb expects)
+            if [[ -f "${mysql_lib_path}/libmysqlclient.21.dylib" ]]; then
+                export DYLD_LIBRARY_PATH="${mysql_lib_path}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+                break
+            fi
+        fi
+    done
 fi
 
 # CLI command (use full path or alias)
@@ -507,7 +516,31 @@ else
 fi
 
 # ============================================
-# Step 3: Per-Species Locus Type Files
+# Step 2b: Per-Species All Chromosomes Files
+# ============================================
+# Generates files like: bonobo/bonobo_vgnc_gene_set_All.json
+# (All chromosomes combined, no locus filter)
+
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    log_info "Adding per-species all chromosomes jobs for: ${SPECIES_FILTER}"
+
+    IFS=',' read -ra SPECIES_ARRAY <<< "${SPECIES_FILTER}"
+    for SPECIES_ID in "${SPECIES_ARRAY[@]}"; do
+        SPECIES_ID=$(echo "${SPECIES_ID}" | xargs)
+
+        # Split formats into individual jobs
+        for FORMAT in "${FORMAT_ARRAY[@]}"; do
+            FORMAT=$(echo "${FORMAT}" | xargs)
+            echo "--species \"${SPECIES_ID}\" --formats \"${FORMAT}\" ${DRY_RUN_FLAG}" >> "${JOB_FILE}"
+            JOB_COUNT=$((JOB_COUNT + 1))
+        done
+    done
+else
+    log_info "No species available for all chromosomes file generation"
+fi
+
+# ============================================
+# Step 4: Per-Species Locus Type Files
 # ============================================
 
 if [[ -n "${SPECIES_FILTER}" ]]; then
@@ -531,7 +564,7 @@ else
 fi
 
 # ============================================
-# Step 4: Per-Species Locus Group Files
+# Step 5: Per-Species Locus Group Files
 # ============================================
 
 if [[ -n "${SPECIES_FILTER}" ]]; then
@@ -552,6 +585,100 @@ if [[ -n "${SPECIES_FILTER}" ]]; then
     done
 else
     log_info "No species available for locus group file generation"
+fi
+
+# ============================================
+# Step 6: Per-Species Locus Type + Chromosome Files
+# ============================================
+
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    log_info "Adding per-species locus type + chromosome jobs for: ${SPECIES_FILTER}"
+
+    IFS=',' read -ra SPECIES_ARRAY <<< "${SPECIES_FILTER}"
+    for SPECIES_ID in "${SPECIES_ARRAY[@]}"; do
+        SPECIES_ID=$(echo "${SPECIES_ID}" | xargs)
+
+        # Determine which chromosomes to use
+        if [[ -n "${CHROMOSOME_FILTER}" ]]; then
+            CHROMOSOME_LIST="${CHROMOSOME_FILTER}"
+        else
+            if [[ -z "${DRY_RUN_FLAG}" ]]; then
+                CHROMOSOME_LIST=$(get_chromosomes_for_species "${SPECIES_ID}")
+                if [[ $? -ne 0 ]]; then
+                    log_error "Failed to discover chromosomes for species ${SPECIES_ID}"
+                    if [[ "${CONTINUE_ON_ERROR}" == true ]]; then
+                        continue
+                    else
+                        exit 1
+                    fi
+                fi
+            else
+                CHROMOSOME_LIST="1,2,X,Y,Un"
+            fi
+        fi
+
+        IFS=',' read -ra CHROMOSOME_ARRAY <<< "${CHROMOSOME_LIST}"
+        for CHROMOSOME in "${CHROMOSOME_ARRAY[@]}"; do
+            CHROMOSOME=$(echo "${CHROMOSOME}" | xargs)
+
+            for LOCUS_TYPE in "${DEFAULT_LOCUS_TYPES[@]}"; do
+                for FORMAT in "${FORMAT_ARRAY[@]}"; do
+                    FORMAT=$(echo "${FORMAT}" | xargs)
+                    echo "--species \"${SPECIES_ID}\" --locus-type \"${LOCUS_TYPE}\" --chromosome \"${CHROMOSOME}\" --formats \"${FORMAT}\" ${DRY_RUN_FLAG}" >> "${JOB_FILE}"
+                    JOB_COUNT=$((JOB_COUNT + 1))
+                done
+            done
+        done
+    done
+else
+    log_info "No species available for locus type + chromosome file generation"
+fi
+
+# ============================================
+# Step 7: Per-Species Locus Group + Chromosome Files
+# ============================================
+
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    log_info "Adding per-species locus group + chromosome jobs for: ${SPECIES_FILTER}"
+
+    IFS=',' read -ra SPECIES_ARRAY <<< "${SPECIES_FILTER}"
+    for SPECIES_ID in "${SPECIES_ARRAY[@]}"; do
+        SPECIES_ID=$(echo "${SPECIES_ID}" | xargs)
+
+        # Determine which chromosomes to use
+        if [[ -n "${CHROMOSOME_FILTER}" ]]; then
+            CHROMOSOME_LIST="${CHROMOSOME_FILTER}"
+        else
+            if [[ -z "${DRY_RUN_FLAG}" ]]; then
+                CHROMOSOME_LIST=$(get_chromosomes_for_species "${SPECIES_ID}")
+                if [[ $? -ne 0 ]]; then
+                    log_error "Failed to discover chromosomes for species ${SPECIES_ID}"
+                    if [[ "${CONTINUE_ON_ERROR}" == true ]]; then
+                        continue
+                    else
+                        exit 1
+                    fi
+                fi
+            else
+                CHROMOSOME_LIST="1,2,X,Y,Un"
+            fi
+        fi
+
+        IFS=',' read -ra CHROMOSOME_ARRAY <<< "${CHROMOSOME_LIST}"
+        for CHROMOSOME in "${CHROMOSOME_ARRAY[@]}"; do
+            CHROMOSOME=$(echo "${CHROMOSOME}" | xargs)
+
+            for LOCUS_GROUP in "${DEFAULT_LOCUS_GROUPS[@]}"; do
+                for FORMAT in "${FORMAT_ARRAY[@]}"; do
+                    FORMAT=$(echo "${FORMAT}" | xargs)
+                    echo "--species \"${SPECIES_ID}\" --locus-group \"${LOCUS_GROUP}\" --chromosome \"${CHROMOSOME}\" --formats \"${FORMAT}\" ${DRY_RUN_FLAG}" >> "${JOB_FILE}"
+                    JOB_COUNT=$((JOB_COUNT + 1))
+                done
+            done
+        done
+    done
+else
+    log_info "No species available for locus group + chromosome file generation"
 fi
 
 log_info "Total jobs to execute: ${JOB_COUNT}"
