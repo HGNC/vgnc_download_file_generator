@@ -4,10 +4,10 @@ import sys
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
 from vgnc_download_file_generator import __version__
-from vgnc_download_file_generator.config import AppConfig, get_settings
+from vgnc_download_file_generator.config import get_settings
 from vgnc_download_file_generator.database.connection import DatabaseConnection
 from vgnc_download_file_generator.generator import BaseFileGenerator
 from vgnc_download_file_generator.generators import (
@@ -229,7 +229,10 @@ def main(
             try:
                 species_id = int(species)
                 # Query database for actual species display name
-                from vgnc_download_file_generator.database.queries import build_species_display_name_query, compile_query_for_mysql
+                from vgnc_download_file_generator.database.queries import (
+                    build_species_display_name_query,
+                    compile_query_for_mysql,
+                )
 
                 query = build_species_display_name_query(species_id)
                 cursor = db.get_streaming_cursor()

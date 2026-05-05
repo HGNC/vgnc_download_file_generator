@@ -9,7 +9,9 @@ class TestBuildSpeciesDisplayNameQuery:
 
     def test_generates_sql_with_correct_select(self) -> None:
         """Test that generated SQL selects display_name."""
-        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+        from vgnc_download_file_generator.database.queries import (
+            build_species_display_name_query,
+        )
 
         query = build_species_display_name_query(9913)
 
@@ -20,7 +22,9 @@ class TestBuildSpeciesDisplayNameQuery:
 
     def test_filters_by_taxon_id(self) -> None:
         """Test that query filters by taxon_id."""
-        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+        from vgnc_download_file_generator.database.queries import (
+            build_species_display_name_query,
+        )
 
         query = build_species_display_name_query(9913)
 
@@ -31,7 +35,9 @@ class TestBuildSpeciesDisplayNameQuery:
 
     def test_uses_bind_params_for_taxon_id(self) -> None:
         """Test that query uses bind parameters for taxon_id."""
-        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+        from vgnc_download_file_generator.database.queries import (
+            build_species_display_name_query,
+        )
 
         query = build_species_display_name_query(9913)
 
@@ -41,7 +47,9 @@ class TestBuildSpeciesDisplayNameQuery:
 
     def test_selects_from_species_table(self) -> None:
         """Test that query selects from species table."""
-        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+        from vgnc_download_file_generator.database.queries import (
+            build_species_display_name_query,
+        )
 
         query = build_species_display_name_query(9913)
 
@@ -51,7 +59,9 @@ class TestBuildSpeciesDisplayNameQuery:
 
     def test_returns_text_construct(self) -> None:
         """Test that function returns SQLAlchemy text construct."""
-        from vgnc_download_file_generator.database.queries import build_species_display_name_query
+        from vgnc_download_file_generator.database.queries import (
+            build_species_display_name_query,
+        )
 
         query = build_species_display_name_query(9913)
 
@@ -63,8 +73,11 @@ class TestCompileQueryForMysql:
 
     def test_converts_named_params_to_positional(self) -> None:
         """Test that named parameters are converted to %s placeholders."""
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
         from sqlalchemy import text
+
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
 
         query = text("SELECT * FROM table WHERE id = :id AND name = :name")
         sql, params = compile_query_for_mysql(query)
@@ -77,8 +90,11 @@ class TestCompileQueryForMysql:
 
     def test_returns_tuple_of_params(self) -> None:
         """Test that function returns tuple of parameters."""
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
         from sqlalchemy import bindparam, text
+
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
 
         query = text("SELECT * FROM table WHERE id = :id").bindparams(bindparam("id", value=123))
         sql, params = compile_query_for_mysql(query)
@@ -89,8 +105,11 @@ class TestCompileQueryForMysql:
 
     def test_handles_expanding_params_for_in_clause(self) -> None:
         """Test that expanding parameters (IN clauses) are handled correctly."""
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
         from sqlalchemy import bindparam, text
+
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
 
         query = text("SELECT * FROM table WHERE id IN :ids").bindparams(
             bindparam("ids", value=(1, 2, 3), expanding=True)
@@ -105,8 +124,11 @@ class TestCompileQueryForMysql:
 
     def test_preserves_param_order(self) -> None:
         """Test that parameter order is preserved in the output tuple."""
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
         from sqlalchemy import bindparam, text
+
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
 
         query = text("SELECT * FROM table WHERE a = :a AND b = :b AND c = :c").bindparams(
             bindparam("a", value=1),

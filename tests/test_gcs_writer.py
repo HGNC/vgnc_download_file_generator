@@ -1,6 +1,6 @@
 """Tests for GCSStreamWriter class."""
 
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 from vgnc_download_file_generator.writers.gcs_writer import GCSStreamWriter
 
@@ -284,7 +284,7 @@ class TestGzipCompression:
 
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     @patch("vgnc_download_file_generator.writers.gcs_writer.gzip")
-    def test_sets_gzip_content_type_when_compress_enabled(self, mock_gzip, mock_storage) -> None:
+    def test_sets_gzip_content_type_when_compress_enabled(self, _mock_gzip, mock_storage) -> None:
         """Test that content-type is set to application/gzip when compress=True."""
         mock_client = MagicMock()
         mock_storage.Client.return_value = mock_client
@@ -404,7 +404,6 @@ class TestUploadFromFile:
     @patch("vgnc_download_file_generator.writers.gcs_writer.gzip")
     def test_compresses_file_during_upload_when_requested(self, mock_gzip, mock_storage) -> None:
         """Test that file is compressed during upload when compress=True."""
-        from unittest.mock import mock_open
         mock_client = MagicMock()
         mock_storage.Client.return_value = mock_client
         mock_bucket = MagicMock()
@@ -508,7 +507,7 @@ class TestRetryLogic:
         mock_bucket.blob.return_value = mock_blob
 
         # Fail all 3 times (max retries)
-        mock_stream = MagicMock()
+        MagicMock()
         mock_blob.open.side_effect = [
             DeadlineExceeded("Timeout"),
             DeadlineExceeded("Timeout"),
@@ -529,7 +528,7 @@ class TestRetryLogic:
 
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     @patch("vgnc_download_file_generator.writers.gcs_writer.time.sleep")
-    def test_succeeds_on_final_retry(self, mock_sleep, mock_storage) -> None:
+    def test_succeeds_on_final_retry(self, _mock_sleep, mock_storage) -> None:
         """Test that operation succeeds on the final retry attempt."""
         from google.api_core.exceptions import ServiceUnavailable
 
@@ -556,7 +555,7 @@ class TestRetryLogic:
 
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     @patch("vgnc_download_file_generator.writers.gcs_writer.time.sleep")
-    def test_propagates_error_after_max_retries(self, mock_sleep, mock_storage) -> None:
+    def test_propagates_error_after_max_retries(self, _mock_sleep, mock_storage) -> None:
         """Test that error is propagated after max retries exhausted."""
         from google.api_core.exceptions import ServiceUnavailable
 
@@ -575,7 +574,7 @@ class TestRetryLogic:
         try:
             with writer.open_write_stream("data.txt", "text/plain"):
                 pass
-            assert False, "Should have raised ServiceUnavailable"
+            raise AssertionError("Should have raised ServiceUnavailable")
         except ServiceUnavailable as e:
             assert "Persistent error" in str(e)
 
@@ -600,7 +599,7 @@ class TestRetryLogic:
         try:
             with writer.open_write_stream("data.txt", "text/plain"):
                 pass
-            assert False, "Should have raised NotFound"
+            raise AssertionError("Should have raised NotFound")
         except NotFound:
             pass
 
@@ -660,7 +659,7 @@ class TestErrorLogging:
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     @patch("vgnc_download_file_generator.writers.gcs_writer.time.sleep")
     @patch("vgnc_download_file_generator.writers.gcs_writer.logger")
-    def test_logs_retry_attempts(self, mock_logger, mock_sleep, mock_storage) -> None:
+    def test_logs_retry_attempts(self, mock_logger, _mock_sleep, mock_storage) -> None:
         """Test that retry attempts are logged with retry count."""
         from google.api_core.exceptions import ServiceUnavailable
 
@@ -690,7 +689,7 @@ class TestErrorLogging:
     @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
     @patch("vgnc_download_file_generator.writers.gcs_writer.time.sleep")
     @patch("vgnc_download_file_generator.writers.gcs_writer.logger")
-    def test_logs_final_error_after_max_retries(self, mock_logger, mock_sleep, mock_storage) -> None:
+    def test_logs_final_error_after_max_retries(self, mock_logger, _mock_sleep, mock_storage) -> None:
         """Test that final error is logged after max retries exhausted."""
         from google.api_core.exceptions import ServiceUnavailable
 

@@ -411,7 +411,9 @@ class TestSpeciesNameNormalization:
 
     def test_cow_normalizes_to_cattle(self) -> None:
         """Test that 'cow' is normalized to 'cattle' in file paths."""
-        from vgnc_download_file_generator.models.file_spec import _normalize_species_name
+        from vgnc_download_file_generator.models.file_spec import (
+            _normalize_species_name,
+        )
 
         # Test that the normalization function converts cow to cattle
         normalized = _normalize_species_name("cow")
@@ -419,7 +421,9 @@ class TestSpeciesNameNormalization:
 
     def test_cattle_remains_cattle(self) -> None:
         """Test that 'cattle' remains 'cattle' (no double normalization)."""
-        from vgnc_download_file_generator.models.file_spec import _normalize_species_name
+        from vgnc_download_file_generator.models.file_spec import (
+            _normalize_species_name,
+        )
 
         normalized = _normalize_species_name("cattle")
         assert normalized == "cattle"
@@ -524,7 +528,7 @@ class TestAllSpeciesDirectory:
             extension="json",
         )
 
-        path = spec.gcs_path()
+        spec.gcs_path()
         # Also support: json/all/all_vgnc_gene_set_All.json (in all/ directory)
         # This is an alternative path for the same data
 

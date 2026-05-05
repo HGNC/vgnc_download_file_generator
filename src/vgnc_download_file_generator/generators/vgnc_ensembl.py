@@ -9,7 +9,6 @@ from collections.abc import Generator, Iterator
 from typing import Any
 
 from vgnc_download_file_generator.generator import BaseFileGenerator
-from vgnc_download_file_generator.utils.streaming import stream_gene_data
 
 
 class VgncEnsembl(BaseFileGenerator):
@@ -85,14 +84,16 @@ class VgncEnsembl(BaseFileGenerator):
             Iterator of lists, where each list contains chunk_size dictionaries
         """
         # Import split query functions
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
         from vgnc_download_file_generator.database.queries_split import (
-            build_gene_data_query,
-            build_xrefs_query,
             build_aliases_query,
             build_dates_query,
+            build_gene_data_query,
+            build_xrefs_query,
             merge_gene_results,
         )
-        from vgnc_download_file_generator.database.queries import compile_query_for_mysql
 
         # Build filters for the query - Approved status only
         filters: dict[str, str | int | list[str]] = {"status": "Approved"}
@@ -130,7 +131,7 @@ class VgncEnsembl(BaseFileGenerator):
         gene_data_raw = []
 
         for row in cursor:
-            row_dict = dict(zip(db_headers, row))
+            row_dict = dict(zip(db_headers, row, strict=False))
             gene_data_raw.append(row_dict)
 
         cursor.close()
@@ -148,7 +149,7 @@ class VgncEnsembl(BaseFileGenerator):
         xrefs_sql, xrefs_params = compile_query_for_mysql(xrefs_query)
         cursor.execute(xrefs_sql, xrefs_params)
         xrefs_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        xrefs = [dict(zip(xrefs_db_headers, row)) for row in cursor]
+        xrefs = [dict(zip(xrefs_db_headers, row, strict=False)) for row in cursor]
         cursor.close()
 
         # Execute Query 3: Aliases
@@ -157,7 +158,7 @@ class VgncEnsembl(BaseFileGenerator):
         aliases_sql, aliases_params = compile_query_for_mysql(aliases_query)
         cursor.execute(aliases_sql, aliases_params)
         aliases_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        aliases = [dict(zip(aliases_db_headers, row)) for row in cursor]
+        aliases = [dict(zip(aliases_db_headers, row, strict=False)) for row in cursor]
         cursor.close()
 
         # Execute Query 4: Dates
@@ -166,7 +167,7 @@ class VgncEnsembl(BaseFileGenerator):
         dates_sql, dates_params = compile_query_for_mysql(dates_query)
         cursor.execute(dates_sql, dates_params)
         dates_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        dates = [dict(zip(dates_db_headers, row)) for row in cursor]
+        dates = [dict(zip(dates_db_headers, row, strict=False)) for row in cursor]
         cursor.close()
 
         # Merge all results

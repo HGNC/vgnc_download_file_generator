@@ -4,7 +4,8 @@
 
 **Current Implementation**: `generate_all_parallel.sh` (bash script)
 
-The functionality described in this PRD is currently implemented via a bash script rather than a `--generate-all` CLI option. The script provides:
+The functionality described in this PRD is currently implemented via a bash script
+rather than a `--generate-all` CLI option. The script provides:
 
 - ✅ Auto-discovery of species from database
 - ✅ Auto-discovery of chromosomes for each species
@@ -21,29 +22,34 @@ The functionality described in this PRD is currently implemented via a bash scri
 - ✅ Dry-run mode for preview
 
 **Not Yet Implemented**:
+
 - ❌ `--generate-all` as a native Python CLI option (currently uses bash script)
 - ❌ Skip existing files check (always generates)
 - ❌ Check-only mode to show missing files
 - ❌ Incremental updates based on database changes
 
 **Recent Improvements**:
+
 - ✅ Empty file detection - skips files with no data before GCS upload
 - ✅ Cross-species chromosome contamination prevention (taxon_id filtering)
 - ✅ Unlocated gene handling - genes without location data go to "Un" file
 
 ## Overview
 
-Add a `--generate-all` CLI option that automatically generates all possible VGNC download files for all species, chromosomes, locus types, and file types.
+Add a `--generate-all` CLI option that automatically generates all possible
+VGNC download files for all species, chromosomes, locus types, and file types.
 
 ## Problem Statement
 
 Currently, users must run multiple CLI commands to generate all required files:
+
 - Separate commands for each species
 - Separate commands for each chromosome
 - Separate commands for each file type (vgnc_public, vgnc_ensembl, vgnc_withdrawn)
 - Manual tracking of what has been generated
 
 This is:
+
 - **Time-consuming**: Requires many manual commands
 - **Error-prone**: Easy to miss combinations or duplicate work
 - **Hard to maintain**: No easy way to regenerate all files after database updates
@@ -51,23 +57,28 @@ This is:
 ## Goals
 
 ### Primary Goal
+
 Provide a single command that generates all VGNC download files:
+
 ```bash
 vgnc-download-file-generator --generate-all
 ```
 
 ### Secondary Goals
+
 1. **Progress tracking**: Show progress across hundreds of files
-2. **Resume capability**: Skip already-generated files (unless --force)
-3. **Parallel execution**: Optional parallel processing for speed
-4. **Selective generation**: Allow filtering what to generate
+1. **Resume capability**: Skip already-generated files (unless --force)
+1. **Parallel execution**: Optional parallel processing for speed
+1. **Selective generation**: Allow filtering what to generate
 
 ## Functional Requirements
 
 ### FR1: Generate All Command
+
 **Priority**: P0 (Must Have)
 
 The CLI shall accept a `--generate-all` flag that:
+
 - Generates all file types for all species
 - Includes all chromosome-specific files
 - Includes all locus type files
@@ -76,20 +87,24 @@ The CLI shall accept a `--generate-all` flag that:
 - Generates both TSV and JSON formats
 
 **Example:**
+
 ```bash
 vgnc-download-file-generator --generate-all
 ```
 
 ### FR2: Discover Database Content
+
 **Priority**: P0 (Must Have)
 
 The generator shall:
+
 - Query the `species` table to get all live species
 - Query the `chromosomes` table to discover all chromosomes for each species
 - Query the `locus_type` table to get all locus types
 - Query the `locus_group` table to get all locus groups
 
 ### FR3: File Type Combinations
+
 **Priority**: P0 (Must Have)
 
 Generate files for each combination:
@@ -98,26 +113,28 @@ Generate files for each combination:
    - `json/{species}/{species}_vgnc_gene_set_chr_{chromosome}.txt`
    - `json/{species}/{species}_vgnc_gene_set_chr_{chromosome}.json`
 
-2. **Per Species, Per Locus Type** (vgnc_public)
+1. **Per Species, Per Locus Type** (vgnc_public)
    - `json/{species}/locus_types/{species}_{locus_type}_All.txt`
    - `json/{species}/locus_types/{species}_{locus_type}_All.json`
 
-3. **Per Species, Per Locus Group** (vgnc_public)
+1. **Per Species, Per Locus Group** (vgnc_public)
    - `json/{species}/locus_groups/{species}_{locus_group}_All.txt`
    - `json/{species}/locus_groups/{species}_{locus_group}_All.json`
 
-4. **All Species** (vgnc_ensembl)
+1. **All Species** (vgnc_ensembl)
    - `ensembl/VGNC_to_Ensembl_mapping.txt`
 
-5. **All Species** (vgnc_withdrawn)
+1. **All Species** (vgnc_withdrawn)
    - `withdrawn/{species}/{species}_withdrawn.txt`
    - For each species with withdrawn entries
 
 ### FR4: Progress Display
+
 **Priority**: P1 (Should Have)
 
 Show progress for all files:
-```
+
+```text
 Generating all VGNC download files...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45/237 (19%)
 
@@ -125,25 +142,31 @@ Current: cow (9913) - Chromosome X
 ```
 
 ### FR5: Skip Existing Files
+
 **Priority**: P1 (Should Have)
 
 By default:
+
 - Check GCS for existing files
 - Skip generation if file exists and is recent
 - Use `--force` flag to regenerate all files
 
 ### FR6: Parallel Processing
+
 **Priority**: P2 (Nice to Have)
 
 Optional parallel generation:
+
 ```bash
 vgnc-download-file-generator --generate-all --workers 8
 ```
 
 ### FR7: Selective Generation
+
 **Priority**: P2 (Nice to Have)
 
 Allow filtering what to generate:
+
 ```bash
 # Only generate TSV files
 vgnc-download-file-generator --generate-all --formats tsv
@@ -161,17 +184,20 @@ vgnc-download-file-generator --generate-all --file-type vgnc_public
 ## Non-Functional Requirements
 
 ### NFR1: Performance
+
 - Should complete full generation in under 1 hour (for ~30 species)
 - Memory usage should remain under 2GB
 - Should handle 500+ file generations
 
 ### NFR2: Reliability
+
 - Must handle failures gracefully
 - Continue on individual file errors
 - Log all errors for review
 - Provide summary report at end
 
 ### NFR3: Idempotency
+
 - Running multiple times should produce same results
 - File metadata (timestamps) should be consistent
 
@@ -180,6 +206,7 @@ vgnc-download-file-generator --generate-all --file-type vgnc_public
 ### Database Queries
 
 **Get all species:**
+
 ```sql
 SELECT taxon_id, display_name, ensembl_species_name
 FROM species
@@ -208,6 +235,7 @@ ORDER BY chromosome_name;
 ```
 
 **Important notes:**
+
 - Different species have vastly different chromosome counts
 - Unplaced scaffolds (identified by `coord_system` containing 'scaffold') are grouped together as "Un"
   - Examples include: KE145709.1, KE146291.1, JSUE03047131.1, NTIC01000001.1, etc.
@@ -217,6 +245,7 @@ ORDER BY chromosome_name;
 - The query uses JOINs to ensure only chromosomes with actual gene data are returned
 
 **Get all locus types:**
+
 ```sql
 SELECT DISTINCT type
 FROM locus_type
@@ -224,6 +253,7 @@ ORDER BY type;
 ```
 
 **Get all locus groups:**
+
 ```sql
 SELECT DISTINCT name
 FROM locus_group
@@ -238,13 +268,13 @@ ORDER BY name;
    - Build list of all file combinations
    - Estimate total file count
 
-2. **Generation Phase**
+1. **Generation Phase**
    - Iterate through combinations
    - Skip existing files (unless --force)
    - Track progress
    - Handle errors
 
-3. **Reporting Phase**
+1. **Reporting Phase**
    - Summary statistics
    - Error report
    - GCS paths generated
@@ -276,7 +306,7 @@ Options:
 ## Future Enhancements
 
 1. **Incremental Updates**: Only regenerate files for changed species
-2. **Smart Caching**: Use database modification timestamps
-3. **Validation**: Verify all expected files exist after generation
-4. **Manifest Generation**: Create manifest file with checksums
-5. **Notifications**: Send alerts on completion/failure
+1. **Smart Caching**: Use database modification timestamps
+1. **Validation**: Verify all expected files exist after generation
+1. **Manifest Generation**: Create manifest file with checksums
+1. **Notifications**: Send alerts on completion/failure

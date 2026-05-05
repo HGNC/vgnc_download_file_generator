@@ -116,7 +116,7 @@ class TestVgncPublicStreamRows:
         # Query 1: Main gene data (returns 8 rows)
         gene_cursor = MagicMock()
         gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
-        gene_cursor.__iter__ = lambda self: iter([
+        gene_cursor.__iter__ = lambda _self: iter([
             (1, "GENE1"),
             (2, "GENE2"),
             (3, "GENE3"),
@@ -130,12 +130,12 @@ class TestVgncPublicStreamRows:
         # Queries 2-4: Return empty results
         empty_cursor = MagicMock()
         empty_cursor.description = []
-        empty_cursor.__iter__ = lambda self: iter([])
+        empty_cursor.__iter__ = lambda _self: iter([])
 
         # Configure mock to return different cursers for each call
         # get_streaming_cursor for gene data, get_cursor for other queries
         call_count = [0]
-        def get_cursor_side_effect(*args, **kwargs):
+        def get_cursor_side_effect(*_args, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:  # First call - gene data query
                 return gene_cursor
@@ -173,14 +173,14 @@ class TestVgncPublicStreamRows:
         # Mock empty result for split queries
         gene_cursor = MagicMock()
         gene_cursor.description = []
-        gene_cursor.__iter__ = lambda self: iter([])
+        gene_cursor.__iter__ = lambda _self: iter([])
 
         empty_cursor = MagicMock()
         empty_cursor.description = []
-        empty_cursor.__iter__ = lambda self: iter([])
+        empty_cursor.__iter__ = lambda _self: iter([])
 
         call_count = [0]
-        def get_cursor_side_effect(*args, **kwargs):
+        def get_cursor_side_effect(*_args, **_kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
                 return gene_cursor
@@ -210,11 +210,11 @@ class TestVgncPublicStreamRows:
         # Mock split query responses
         gene_cursor = MagicMock()
         gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
-        gene_cursor.__iter__ = lambda self: iter([(1, "GENE1")])
+        gene_cursor.__iter__ = lambda _self: iter([(1, "GENE1")])
 
         empty_cursor = MagicMock()
         empty_cursor.description = []
-        empty_cursor.__iter__ = lambda self: iter([])
+        empty_cursor.__iter__ = lambda _self: iter([])
 
         # Track which cursors were called
         calls = []

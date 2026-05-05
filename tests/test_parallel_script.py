@@ -95,9 +95,6 @@ class TestJobListGeneration:
 
     def test_generate_all_species_jobs(self) -> None:
         """Test generating jobs for all species files."""
-        species_ids = ["9913", "9606"]
-        formats = "tsv,json"
-        chromosome_filters = {"9913": ["1", "2", "X"]}
 
         # With format splitting, each format gets its own job
         # "All" species files: 3 file types × 2 formats = 6 jobs

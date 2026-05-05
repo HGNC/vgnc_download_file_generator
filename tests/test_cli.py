@@ -1,9 +1,7 @@
 """Tests for CLI main entry point."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from vgnc_download_file_generator.__main__ import main
@@ -187,7 +185,7 @@ class TestCLIConfiguration:
         ), patch("vgnc_download_file_generator.__main__.VgncPublic"):
 
             runner = CliRunner()
-            result = runner.invoke(
+            runner.invoke(
                 main,
                 ["--species", "9913", "--chromosome", "X"],
                 env={"GCS_PROJECT_ID": "test-project", "GCS_BUCKET": "test-bucket"},
@@ -214,7 +212,7 @@ class TestCLIConfiguration:
         ), patch("vgnc_download_file_generator.__main__.VgncPublic"):
 
             runner = CliRunner()
-            result = runner.invoke(
+            runner.invoke(
                 main,
                 [
                     "--species",
@@ -278,7 +276,7 @@ class TestCLIErrorHandling:
         """Test that keyboard interrupt is handled gracefully."""
         with patch("vgnc_download_file_generator.__main__.get_settings"), patch(
             "vgnc_download_file_generator.__main__.DatabaseConnection"
-        ) as mock_db, patch("vgnc_download_file_generator.__main__.GCSStreamWriter"), patch(
+        ), patch("vgnc_download_file_generator.__main__.GCSStreamWriter"), patch(
             "vgnc_download_file_generator.__main__.VgncPublic"
         ) as mock_gen:
 

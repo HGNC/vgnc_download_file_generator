@@ -124,6 +124,30 @@ src/vgnc_download_file_generator/
 - Transient errors: `ServiceUnavailable`, `DeadlineExceeded`
 - Structured logging with retry attempt details
 
+## Troubleshooting
+
+### Database connection
+
+```bash
+mysql -h $DB_HOST -u $DB_USER -p -P $DB_PORT $DB_NAME
+```
+
+### GCS authentication
+
+Cloud Run uses ADC automatically. Locally:
+
+```bash
+gcloud auth application-default login
+```
+
+### macOS mysqlclient fix
+
+If `mysqlclient` fails to find `libmysqlclient` on macOS:
+
+```bash
+python scripts/fix_mysqlclient.py
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

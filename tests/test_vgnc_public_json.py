@@ -29,7 +29,7 @@ class TestVgncPublicGenerateJson:
             [{"vgnc_id": "VGNC:12345", "symbol": "GENE1", "name": "Gene 1"}]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -68,7 +68,7 @@ class TestVgncPublicGenerateJson:
             [{"vgnc_id": "VGNC:12345", "symbol": "GENE1", "name": "Gene 1", "ncbi_id": "12345"}]
         ]
 
-        def mock_stream_rows(chunk_size=5000):  # noqa: ARG001
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -111,7 +111,7 @@ class TestVgncPublicGenerateJson:
             ]
         ]
 
-        def mock_stream_rows(chunk_size=5000):  # noqa: ARG001
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -149,7 +149,7 @@ class TestVgncPublicGenerateJson:
             [{"vgnc_id": "VGNC:12345", "symbol": None, "name": "Gene 1", "ncbi_id": None}]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -192,7 +192,7 @@ class TestVgncPublicGenerateJson:
             ]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -226,7 +226,7 @@ class TestVgncPublicGenerateJson:
         )
 
         # Mock stream_rows to return empty
-        generator.stream_rows = lambda chunk_size=5000: iter([])  # type: ignore[method-assign]
+        generator.stream_rows = lambda _chunk_size=5000: iter([])  # type: ignore[method-assign]
 
         # Generate JSON rows
         result = generator.generate_json_rows()
@@ -259,7 +259,7 @@ class TestVgncPublicGenerateJson:
             ]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -292,7 +292,7 @@ class TestVgncPublicGenerateJson:
         )
 
         # Mock stream_rows to return empty
-        generator.stream_rows = lambda chunk_size=5000: iter([])  # type: ignore[method-assign]
+        generator.stream_rows = lambda _chunk_size=5000: iter([])  # type: ignore[method-assign]
 
         # Generate JSON rows (now yields only JSON objects, no brackets)
         json_objects = list(generator.generate_json_rows())
@@ -318,7 +318,7 @@ class TestVgncPublicGenerateJson:
             [{"vgnc_id": "VGNC:12345", "symbol": "CAFÉ", "name": "Café Gene"}]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
@@ -358,14 +358,14 @@ class TestVgncPublicGenerateJson:
             [{"vgnc_id": "VGNC:12345", "symbol": "GENE1", "name": "Gene 1", "date_approved": test_date}]
         ]
 
-        def mock_stream_rows(chunk_size=5000):
+        def mock_stream_rows(_chunk_size=5000):
             return iter(test_data)
 
         generator.stream_rows = mock_stream_rows  # type: ignore[method-assign]
 
         # Also mock get_headers to include date_approved
         original_headers = generator.get_headers("txt")
-        generator.get_headers = lambda ext: original_headers + ["date_approved"]  # type: ignore[method-assign]
+        generator.get_headers = lambda _ext: original_headers + ["date_approved"]  # type: ignore[method-assign]
 
         # Generate JSON objects
         json_objects = list(generator.generate_json_rows())

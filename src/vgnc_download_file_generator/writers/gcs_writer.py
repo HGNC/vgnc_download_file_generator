@@ -7,10 +7,11 @@ streaming uploads to GCS with support for compression and retry logic.
 import gzip
 import logging
 import time
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from google.api_core.exceptions import (
     DeadlineExceeded,
@@ -228,10 +229,8 @@ class GCSStreamWriter:
 
                         def close(self) -> None:
                             """Close the gzip file."""
-                            try:
+                            with suppress(Exception):
                                 self._gzip_fp.close()
-                            except Exception:
-                                pass
 
                     wrapper = _GzipWriteWrapper(gzip_file)
                     yield wrapper
@@ -301,9 +300,8 @@ class GCSStreamWriter:
             content_type = "application/gzip"
             # For compressed uploads, we need to compress the file first
             compressed_path = f"{source_path}.gz"
-            with open(source_path, "rb") as f_in:
-                with gzip.open(compressed_path, "wb") as f_out:
-                    f_out.writelines(f_in)
+            with open(source_path, "rb") as f_in, gzip.open(compressed_path, "wb") as f_out:
+                f_out.writelines(f_in)
             upload_path = compressed_path
         else:
             upload_path = source_path
