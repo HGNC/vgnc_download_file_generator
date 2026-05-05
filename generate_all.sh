@@ -25,11 +25,11 @@
 #   ./generate_all.sh --species "9913" --dry-run       # Preview what will be generated
 #
 # Environment Variables:
-#   APP_DATABASE__DBHOST    Database host (default: localhost)
-#   APP_DATABASE__DBPORT    Database port (default: 3306)
-#   APP_DATABASE__DBNAME    Database name (default: vgnc)
-#   APP_DATABASE__DBUSER    Database user (default: root)
-#   APP_DATABASE__DBPASS    Database password (required)
+#   DB_HOST       Database host (default: localhost)
+#   DB_PORT       Database port (default: 3306)
+#   DB_NAME       Database name (default: vgnc)
+#   DB_USER       Database user (default: root)
+#   DB_PASSWORD   Database password (required)
 
 set -euo pipefail
 
@@ -129,11 +129,11 @@ Options:
   --help               Show this help message
 
 Environment Variables:
-  APP_DATABASE__DBHOST    Database host (default: localhost)
-  APP_DATABASE__DBPORT    Database port (default: 3306)
-  APP_DATABASE__DBNAME    Database name (default: vgnc)
-  APP_DATABASE__DBUSER    Database user (default: root)
-  APP_DATABASE__DBPASS    Database password (required)
+  DB_HOST       Database host (default: localhost)
+  DB_PORT       Database port (default: 3306)
+  DB_NAME       Database name (default: vgnc)
+  DB_USER       Database user (default: root)
+  DB_PASSWORD   Database password (required)
 
 Examples:
   # Generate all files for specific species (discovers chromosomes from database)
