@@ -190,7 +190,7 @@ class TestCLIConfiguration:
             result = runner.invoke(
                 main,
                 ["--species", "9913", "--chromosome", "X"],
-                env={"APP_GCS__PROJECT_ID": "test-project", "APP_GCS__BUCKET_NAME": "test-bucket"},
+                env={"GCS_PROJECT_ID": "test-project", "GCS_BUCKET": "test-bucket"},
                 catch_exceptions=True,
             )
 
