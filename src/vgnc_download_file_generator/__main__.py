@@ -63,39 +63,39 @@ console = Console()
 )
 @click.option(
     "--project-id",
-    envvar="APP_GCS__PROJECT_ID",
-    help="Google Cloud project ID (or set APP_GCS__PROJECT_ID env var)",
+    envvar="GCS_PROJECT_ID",
+    help="Google Cloud project ID (or set GCS_PROJECT_ID env var)",
 )
 @click.option(
     "--bucket-name",
-    envvar="APP_GCS__BUCKET_NAME",
-    help="GCS bucket name (or set APP_GCS__BUCKET_NAME env var)",
+    envvar="GCS_BUCKET",
+    help="GCS bucket name (or set GCS_BUCKET env var)",
 )
 @click.option(
     "--dbhost",
-    envvar="APP_DATABASE__DBHOST",
-    help="Database host (or set APP_DATABASE__DBHOST env var)",
+    envvar="DB_HOST",
+    help="Database host (or set DB_HOST env var)",
 )
 @click.option(
     "--dbuser",
-    envvar="APP_DATABASE__DBUSER",
-    help="Database user (or set APP_DATABASE__DBUSER env var)",
+    envvar="DB_USER",
+    help="Database user (or set DB_USER env var)",
 )
 @click.option(
     "--dbpass",
-    envvar="APP_DATABASE__DBPASS",
-    help="Database password (or set APP_DATABASE__DBPASS env var)",
+    envvar="DB_PASSWORD",
+    help="Database password (or set DB_PASSWORD env var)",
 )
 @click.option(
     "--dbport",
-    envvar="APP_DATABASE__DBPORT",
+    envvar="DB_PORT",
     type=int,
-    help="Database port (or set APP_DATABASE__DBPORT env var)",
+    help="Database port (or set DB_PORT env var)",
 )
 @click.option(
     "--dbname",
-    envvar="APP_DATABASE__DBNAME",
-    help="Database name (or set APP_DATABASE__DBNAME env var)",
+    envvar="DB_NAME",
+    help="Database name (or set DB_NAME env var)",
 )
 def main(
     species: str,

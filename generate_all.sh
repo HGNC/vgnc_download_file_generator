@@ -51,13 +51,11 @@ else
     CLI_CMD="uv run python -m vgnc_download_file_generator"
 fi
 
-# Database credentials (from environment or .env file)
-# The script uses the same configuration as the Python application
-DB_HOST="${APP_DATABASE__DBHOST:-localhost}"
-DB_PORT="${APP_DATABASE__DBPORT:-3306}"
-DB_NAME="${APP_DATABASE__DBNAME:-vgnc}"
-DB_USER="${APP_DATABASE__DBUSER:-root}"
-DB_PASS="${APP_DATABASE__DBPASS:-}"
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-3306}"
+DB_NAME="${DB_NAME:-vgnc}"
+DB_USER="${DB_USER:-root}"
+DB_PASS="${DB_PASSWORD:-}"
 
 # Common locus types (space-separated as required by CLI)
 DEFAULT_LOCUS_TYPES=(
