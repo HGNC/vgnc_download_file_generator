@@ -64,7 +64,9 @@ uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --dr
 ### Docker (Cloud Run)
 
 The container entrypoint runs `generate_all.sh` with species and format from
-environment variables:
+environment variables. The Dockerfile copies `pyproject.toml`, `uv.lock`, and
+`README.md` (required by the hatchling build backend) before running
+`uv sync --frozen --no-dev` for reproducible production builds:
 
 ```bash
 docker build -t vgnc-download-files .
