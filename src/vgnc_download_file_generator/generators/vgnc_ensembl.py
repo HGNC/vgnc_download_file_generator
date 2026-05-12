@@ -70,128 +70,120 @@ class VgncEnsembl(BaseFileGenerator):
         return self._ENSEMBL_HEADERS.copy()
 
     def stream_rows(
-        self, chunk_size: int = 5000
+        self, chunk_size: int = 5000, batch_size: int = 5000
     ) -> Iterator[list[dict[str, Any]]]:
         """Stream rows from the database in chunks.
 
         Filters for 'Approved' status genes only.
-        Uses split query architecture for performance.
+        Uses batched split query architecture to bound memory usage.
 
         Args:
-            chunk_size: Number of rows to fetch per batch (default: 5000)
+            chunk_size: Number of mapped rows to yield per chunk (default: 5000)
+            batch_size: Number of gene rows to process per sub-query batch (default: 5000)
 
         Yields:
-            Iterator of lists, where each list contains chunk_size dictionaries
+            Iterator of lists, where each list contains up to chunk_size dictionaries
         """
-        # Import split query functions
         from vgnc_download_file_generator.database.queries import (
             compile_query_for_mysql,
         )
         from vgnc_download_file_generator.database.queries_split import (
-            build_aliases_query,
-            build_dates_query,
             build_gene_data_query,
-            build_xrefs_query,
+            fetch_sub_data_for_batch,
             merge_gene_results,
         )
 
-        # Build filters for the query - Approved status only
         filters: dict[str, str | int | list[str]] = {"status": "Approved"}
 
-        # Add taxon_id filter
         if isinstance(self.species.taxon_id, int):
             filters["taxon_id"] = self.species.taxon_id
 
-        # Add chromosome filter if present
         if self.chromosome is not None:
             filters["chromosome"] = self.chromosome
 
-        # Add locus_group filter if present
         if self.locus_group is not None:
             filters["locus_group"] = self.locus_group
 
-        # Add locus_type filter if present
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
-        # Filter by status_id - only include specific status values
         filters["status_id"] = [6, 11, 12]
 
-        # Create mapping from database column names to standard headers
         column_map = self._get_column_map()
 
-        # Execute Query 1: Main gene data
         gene_query = build_gene_data_query(filters=filters if filters else None)
-        cursor = self.db.get_streaming_cursor()
+        gene_cursor = self.db.get_streaming_cursor()
         gene_sql, gene_params = compile_query_for_mysql(gene_query)
-        cursor.execute(gene_sql, gene_params)
+        gene_cursor.execute(gene_sql, gene_params)
 
-        # Fetch all gene data
-        db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        gene_data_raw = []
+        db_headers = [desc[0] for desc in gene_cursor.description] if gene_cursor.description else []
 
-        for row in cursor:
-            row_dict = dict(zip(db_headers, row, strict=False))
-            gene_data_raw.append(row_dict)
+        sub_cursor = self.db.get_cursor()
+        output_chunk: list[dict[str, Any]] = []
+        gene_batch: list[dict[str, Any]] = []
 
-        cursor.close()
+        try:
+            for row in gene_cursor:
+                row_dict = dict(zip(db_headers, row, strict=False))
+                gene_batch.append(row_dict)
 
-        # If no gene data, return empty iterator
-        if not gene_data_raw:
-            return
+                if len(gene_batch) >= batch_size:
+                    for mapped_row in self._process_batch(
+                        gene_batch, sub_cursor, column_map, compile_query_for_mysql,
+                        fetch_sub_data_for_batch, merge_gene_results,
+                    ):
+                        output_chunk.append(mapped_row)
+                        if len(output_chunk) >= chunk_size:
+                            yield output_chunk
+                            output_chunk = []
+                    gene_batch = []
 
-        # Extract genefam_ids for the other queries
-        genefam_ids = [row["genefam_id"] for row in gene_data_raw]
+            if gene_batch:
+                for mapped_row in self._process_batch(
+                    gene_batch, sub_cursor, column_map, compile_query_for_mysql,
+                    fetch_sub_data_for_batch, merge_gene_results,
+                ):
+                    output_chunk.append(mapped_row)
+                    if len(output_chunk) >= chunk_size:
+                        yield output_chunk
+                        output_chunk = []
+        finally:
+            sub_cursor.close()
+            gene_cursor.close()
 
-        # Execute Query 2: Xrefs
-        xrefs_query = build_xrefs_query(genefam_ids=genefam_ids)
-        cursor = self.db.get_cursor()
-        xrefs_sql, xrefs_params = compile_query_for_mysql(xrefs_query)
-        cursor.execute(xrefs_sql, xrefs_params)
-        xrefs_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        xrefs = [dict(zip(xrefs_db_headers, row, strict=False)) for row in cursor]
-        cursor.close()
+        if output_chunk:
+            yield output_chunk
 
-        # Execute Query 3: Aliases
-        aliases_query = build_aliases_query(genefam_ids=genefam_ids)
-        cursor = self.db.get_cursor()
-        aliases_sql, aliases_params = compile_query_for_mysql(aliases_query)
-        cursor.execute(aliases_sql, aliases_params)
-        aliases_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        aliases = [dict(zip(aliases_db_headers, row, strict=False)) for row in cursor]
-        cursor.close()
+    @staticmethod
+    def _process_batch(
+        gene_batch: list[dict[str, Any]],
+        sub_cursor: Any,
+        column_map: dict[str, str],
+        compile_fn: Any,
+        fetch_sub_fn: Any,
+        merge_fn: Any,
+    ) -> Iterator[dict[str, Any]]:
+        """Run sub-queries for a batch of gene rows and yield mapped merged rows.
 
-        # Execute Query 4: Dates
-        dates_query = build_dates_query(genefam_ids=genefam_ids)
-        cursor = self.db.get_cursor()
-        dates_sql, dates_params = compile_query_for_mysql(dates_query)
-        cursor.execute(dates_sql, dates_params)
-        dates_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        dates = [dict(zip(dates_db_headers, row, strict=False)) for row in cursor]
-        cursor.close()
+        Args:
+            gene_batch: List of gene row dicts for this batch
+            sub_cursor: Database cursor for sub-queries
+            column_map: Mapping from database column names to output header names
+            compile_fn: compile_query_for_mysql function
+            fetch_sub_fn: fetch_sub_data_for_batch function
+            merge_fn: merge_gene_results function
 
-        # Merge all results
-        merged_results = merge_gene_results(gene_data_raw, xrefs, aliases, dates)
-
-        # Stream merged results in chunks
-        chunk: list[dict[str, Any]] = []
-        for merged_row in merged_results:
-            # Map database column names to standard headers
-            mapped_dict = {}
-            for db_col, value in merged_row.items():
-                standard_header = column_map.get(db_col, db_col)
-                mapped_dict[standard_header] = value
-
-            chunk.append(mapped_dict)
-
-            # Yield chunk when it reaches chunk_size
-            if len(chunk) >= chunk_size:
-                yield chunk
-                chunk = []
-
-        # Yield final partial chunk
-        if chunk:
-            yield chunk
+        Yields:
+            Mapped and merged row dictionaries
+        """
+        genefam_ids = [row["genefam_id"] for row in gene_batch]
+        xrefs, aliases, dates = fetch_sub_fn(genefam_ids, sub_cursor, compile_fn)
+        merged = merge_fn(gene_batch, xrefs, aliases, dates)
+        for merged_row in merged:
+            yield {
+                column_map.get(db_col, db_col): value
+                for db_col, value in merged_row.items()
+            }
 
     def generate_tsv_rows(self) -> Generator[str]:
         """Generate TSV-formatted rows as strings.

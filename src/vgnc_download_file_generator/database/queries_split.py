@@ -425,6 +425,46 @@ def build_dates_query(genefam_ids: list[int] | None = None) -> TextClause:
     return query
 
 
+def fetch_sub_data_for_batch(
+    genefam_ids: list[int],
+    cursor: Any,
+    compile_fn: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fetch xrefs, aliases, and dates for a single batch of genefam_ids.
+
+    Runs the three sub-queries (xrefs, aliases, dates) for the given batch
+    of IDs and returns the results as lists of dicts. This avoids holding
+    sub-query results for the entire dataset in memory at once.
+
+    Args:
+        genefam_ids: List of genefam_ids for this batch
+        cursor: A database cursor (regular, not streaming) for executing queries
+        compile_fn: The compile_query_for_mysql function
+
+    Returns:
+        Tuple of (xrefs, aliases, dates) lists
+    """
+    xrefs_query = build_xrefs_query(genefam_ids=genefam_ids)
+    xrefs_sql, xrefs_params = compile_fn(xrefs_query)
+    cursor.execute(xrefs_sql, xrefs_params)
+    xrefs_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+    xrefs = [dict(zip(xrefs_db_headers, row, strict=False)) for row in cursor]
+
+    aliases_query = build_aliases_query(genefam_ids=genefam_ids)
+    aliases_sql, aliases_params = compile_fn(aliases_query)
+    cursor.execute(aliases_sql, aliases_params)
+    aliases_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+    aliases = [dict(zip(aliases_db_headers, row, strict=False)) for row in cursor]
+
+    dates_query = build_dates_query(genefam_ids=genefam_ids)
+    dates_sql, dates_params = compile_fn(dates_query)
+    cursor.execute(dates_sql, dates_params)
+    dates_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+    dates = [dict(zip(dates_db_headers, row, strict=False)) for row in cursor]
+
+    return xrefs, aliases, dates
+
+
 def merge_gene_results(
     gene_data: list[dict[str, Any]],
     xrefs: list[dict[str, Any]],

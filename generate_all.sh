@@ -255,7 +255,7 @@ get_chromosomes_for_species() {
 
     if [[ -z "${chromosomes}" ]]; then
         log_error "No chromosomes found for species ${species_id}"
-        return 1
+        return 2
     fi
 
     # Convert newlines to commas
@@ -338,7 +338,11 @@ if [[ -n "${SPECIES_FILTER}" ]]; then
             log_info "Discovering chromosomes for species ${SPECIES_ID} from database..."
             CHROMOSOME_LIST=$(get_chromosomes_for_species "${SPECIES_ID}")
 
-            if [[ $? -ne 0 ]]; then
+            local chrom_exit_code=$?
+            if [[ ${chrom_exit_code} -eq 2 ]]; then
+                log_info "Skipping species ${SPECIES_ID} - no chromosome data available"
+                continue
+            elif [[ ${chrom_exit_code} -ne 0 ]]; then
                 log_error "Failed to discover chromosomes for species ${SPECIES_ID}"
                 if [[ "${CONTINUE_ON_ERROR}" == true ]]; then
                     continue
