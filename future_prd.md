@@ -2,20 +2,31 @@
 
 ## Implementation Status
 
-**Current Implementation**: `generate_all_parallel.sh` (bash script)
+**Current Implementation**: Two-mode dispatch via `entrypoint.sh`
 
-The functionality described in this PRD is currently implemented via a bash script
-rather than a `--generate-all` CLI option. The script provides:
+The functionality described in this PRD is implemented through a two-mode
+architecture in `entrypoint.sh`, controlled by the `VGNC_MODE` environment
+variable:
 
-- ✅ Auto-discovery of species from database
-- ✅ Auto-discovery of chromosomes for each species
+- **`all` mode** — calls the Python CLI directly for cross-species combined
+  files (public, Ensembl, withdrawn).
+- **`species` mode** — runs `generate_all_parallel.sh` with GNU parallel for
+  per-species file generation (chromosomes, locus types, locus groups).
+
+The Airflow DAG orchestrates execution: a `discover_species` task queries
+the database for all taxon IDs, then dynamic task mapping creates one
+Cloud Run job per species, each running in `species` mode.
+
+The script provides:
+
+- ✅ Auto-discovery of species from database (Airflow `discover_species` task)
+- ✅ Auto-discovery of chromosomes for each species (`db_query_helper.py`)
 - ✅ Per-species chromosome file generation
 - ✅ Per-species locus type file generation (protein-coding, pseudogene)
 - ✅ Per-species locus group file generation (protein-coding gene, pseudogene)
 - ✅ "All" species files (vgnc_public, vgnc_ensembl, vgnc_withdrawn)
 - ✅ Both TSV and JSON format generation
-- ✅ Parallel execution via GNU parallel
-- ✅ Progress bar display
+- ✅ Parallel execution via GNU parallel (within each species task)
 - ✅ Retry logic with exponential backoff
 - ✅ Job logging and failure tracking
 - ✅ Species/chromosome filtering options
@@ -23,7 +34,8 @@ rather than a `--generate-all` CLI option. The script provides:
 
 **Not Yet Implemented**:
 
-- ❌ `--generate-all` as a native Python CLI option (currently uses bash script)
+- ❌ `--generate-all` as a native Python CLI option (not planned — the
+  two-mode `entrypoint.sh` approach is the production architecture)
 - ❌ Skip existing files check (always generates)
 - ❌ Check-only mode to show missing files
 - ❌ Incremental updates based on database changes

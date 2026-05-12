@@ -36,7 +36,8 @@ All configuration is provided via environment variables injected by Cloud Run:
 | `GCS_BUCKET` | GCS bucket name | — |
 | `GCS_PROJECT_ID` | GCP project ID | — |
 | `GCS_PREFIX` | Path prefix for GCS objects | `vgnc/` |
-| `VGNC_SPECIES` | Species taxon IDs (comma-separated) | `9913` |
+| `VGNC_MODE` | Operating mode (`all` or `species`) | `species` |
+| `VGNC_SPECIES` | Species taxon ID (used only when `VGNC_MODE=species`) | `9913` |
 | `VGNC_FORMATS` | Output formats | `tsv,json` |
 
 ## Local development
@@ -63,12 +64,20 @@ uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --dr
 
 ### Docker (Cloud Run)
 
-The container entrypoint runs `generate_all.sh` with species and format from
-environment variables. The image is based on `python:3.13-slim` with
-`default-mysql-client`, `default-libmysqlclient-dev`, `build-essential`, and
-`pkg-config`. The Dockerfile copies `pyproject.toml`, `uv.lock`, and
-`README.md` (required by the hatchling build backend) before running
-`uv sync --frozen --no-dev` for reproducible production builds:
+The container entrypoint (`entrypoint.sh`) dispatches on `VGNC_MODE`:
+
+- **`all` mode** — runs the CLI directly for cross-species combined files
+  (Ensembl, withdrawn, public "All").
+- **`species` mode** — runs `generate_all_parallel.sh` with GNU parallel to
+  generate all per-species files (chromosomes, locus types, locus groups).
+
+The image is based on `python:3.13-slim` with `default-mysql-client`,
+`default-libmysqlclient-dev`, `build-essential`, `pkg-config`, and
+`parallel` (GNU parallel for concurrent per-chromosome file generation).
+The Dockerfile copies `pyproject.toml`, `uv.lock`, and `README.md` before
+running `uv sync --frozen --no-dev` for reproducible production builds. It
+also copies `generate_all.sh`, `generate_all_parallel.sh`,
+`run_cli_job.sh`, `db_query_helper.py`, and `entrypoint.sh`:
 
 ```bash
 docker build -t vgnc-download-files .

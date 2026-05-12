@@ -706,7 +706,7 @@ JOB_LOG="parallel_joblog_$(date +%Y%m%d_%H%M%S).log"
 PARALLEL_CMD="parallel"
 
 # Progress bar
-PARALLEL_CMD="${PARALLEL_CMD} --bar"
+PARALLEL_CMD="${PARALLEL_CMD} --verbose"
 
 # Job limit
 PARALLEL_CMD="${PARALLEL_CMD} --jobs ${JOBS}"

@@ -1,7 +1,7 @@
 FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    default-mysql-client default-libmysqlclient-dev build-essential pkg-config \
+    default-mysql-client default-libmysqlclient-dev build-essential pkg-config parallel \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install uv
@@ -12,7 +12,9 @@ COPY vgnc-download-files/pyproject.toml vgnc-download-files/uv.lock vgnc-downloa
 RUN uv sync --frozen --no-dev
 
 COPY vgnc-download-files/src/ src/
-COPY vgnc-download-files/generate_all.sh vgnc-download-files/entrypoint.sh ./
-RUN chmod +x generate_all.sh entrypoint.sh
+COPY vgnc-download-files/db_query_helper.py ./
+COPY vgnc-download-files/generate_all.sh vgnc-download-files/generate_all_parallel.sh ./
+COPY vgnc-download-files/run_cli_job.sh vgnc-download-files/entrypoint.sh ./
+RUN chmod +x generate_all.sh generate_all_parallel.sh run_cli_job.sh entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
