@@ -8,11 +8,11 @@ RUN pip install uv
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md ./
+COPY vgnc-download-files/pyproject.toml vgnc-download-files/uv.lock vgnc-download-files/README.md ./
 RUN uv sync --frozen --no-dev
 
-COPY src/ src/
-COPY generate_all.sh entrypoint.sh ./
+COPY vgnc-download-files/src/ src/
+COPY vgnc-download-files/generate_all.sh vgnc-download-files/entrypoint.sh ./
 RUN chmod +x generate_all.sh entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
