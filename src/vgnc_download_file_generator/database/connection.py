@@ -159,6 +159,14 @@ class DatabaseConnection:
     def get_streaming_cursor(self) -> Any:
         """Get a server-side cursor for memory-efficient large result set streaming.
 
+        The pool proxy is attached to the cursor as ``_proxy_connection`` so that it
+        stays alive as long as the cursor exists.  Without this, a subsequent call to
+        :meth:`get_cursor` (or :meth:`get_connection`) would overwrite
+        ``self._connection``, causing the previous proxy to be garbage-collected.  The
+        proxy's finalizer would then issue a ``ROLLBACK`` on the underlying connection
+        while an SSCursor result set is still active, triggering a *Commands out of
+        sync* / *server has gone away* (2006) error.
+
         Returns:
             MySQLdb.SSCursor instance for streaming large result sets
 
@@ -167,7 +175,6 @@ class DatabaseConnection:
         """
         import os
 
-        # Check if we should use regular cursor instead (based on env var)
         env_val = os.environ.get("VGNC_USE_STREAMING_CURSOR", "true").lower()
         if env_val not in ("true", "1", "yes"):
             logger.info("VGNC_USE_STREAMING_CURSOR is false, using regular cursor instead of streaming cursor")
@@ -175,14 +182,15 @@ class DatabaseConnection:
 
         conn = self.get_connection()
         cursor = conn.cursor(MySQLdb.cursors.SSCursor)
+        cursor._proxy_connection = conn
         logger.info("Created server-side cursor for streaming")
         return cursor
 
     def get_cursor(self) -> Any:
         """Get a regular cursor for faster query execution on smaller result sets.
 
-        Regular cursors are faster than server-side cursors for smaller result sets
-        because they fetch all results at once rather than buffering on the server.
+        The pool proxy is attached to the cursor as ``_proxy_connection`` for the same
+        reason described in :meth:`get_streaming_cursor`.
 
         Returns:
             MySQLdb.Cursor instance for standard queries
@@ -192,6 +200,7 @@ class DatabaseConnection:
         """
         conn = self.get_connection()
         cursor = conn.cursor()
+        cursor._proxy_connection = conn
         logger.info("Created regular cursor")
         return cursor
 

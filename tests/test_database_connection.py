@@ -199,6 +199,79 @@ class TestStreamingCursor:
             cursor.fetchone.assert_called_once()
 
 
+class TestProxyAttachment:
+    """Regression tests for proxy-GC bug (server has gone away, error 2006)."""
+
+    def test_streaming_cursor_holds_proxy_reference(
+        self, db_config: DatabaseConfig
+    ) -> None:
+        """Streaming cursor must retain _proxy_connection to prevent GC."""
+        conn = DatabaseConnection(db_config)
+
+        with patch.object(MySQLdb, "connect") as mock_connect:
+            mock_connection = MagicMock()
+            mock_cursor = MagicMock()
+            mock_connection.cursor.return_value = mock_cursor
+            mock_connect.return_value = mock_connection
+
+            cursor = conn.get_streaming_cursor()
+
+            assert hasattr(cursor, "_proxy_connection")
+            assert cursor._proxy_connection is not None
+
+    def test_regular_cursor_holds_proxy_reference(
+        self, db_config: DatabaseConfig
+    ) -> None:
+        """Regular cursor must retain _proxy_connection to prevent GC."""
+        conn = DatabaseConnection(db_config)
+
+        with patch.object(MySQLdb, "connect") as mock_connect:
+            mock_connection = MagicMock()
+            mock_cursor = MagicMock()
+            mock_connection.cursor.return_value = mock_cursor
+            mock_connect.return_value = mock_connection
+
+            cursor = conn.get_cursor()
+
+            assert hasattr(cursor, "_proxy_connection")
+            assert cursor._proxy_connection is not None
+
+    def test_concurrent_streaming_and_regular_cursor(
+        self, db_config: DatabaseConfig
+    ) -> None:
+        """Regression: get_cursor() after get_streaming_cursor() must not break SSCursor.
+
+        Before the fix, calling get_cursor() overwrote self._connection, causing
+        the previous pool proxy to be GC'd. The proxy finalizer issued a ROLLBACK
+        on the connection while the SSCursor result set was still active, producing
+        a 'server has gone away' (2006) error.
+        """
+        import gc
+
+        conn = DatabaseConnection(db_config)
+
+        with patch.object(MySQLdb, "connect") as mock_connect:
+            mock_streaming_conn = MagicMock()
+            mock_streaming_cursor = MagicMock()
+            mock_streaming_conn.cursor.return_value = mock_streaming_cursor
+
+            mock_regular_conn = MagicMock()
+            mock_regular_cursor = MagicMock()
+            mock_regular_conn.cursor.return_value = mock_regular_cursor
+
+            mock_connect.side_effect = [mock_streaming_conn, mock_regular_conn]
+
+            streaming_cursor = conn.get_streaming_cursor()
+            regular_cursor = conn.get_cursor()
+
+            gc.collect()
+
+            assert hasattr(streaming_cursor, "_proxy_connection")
+            assert streaming_cursor._proxy_connection is not None
+            assert hasattr(regular_cursor, "_proxy_connection")
+            assert regular_cursor._proxy_connection is not None
+
+
 class TestRetryLogic:
     """Tests for connection retry logic."""
 
