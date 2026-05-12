@@ -232,33 +232,56 @@ get_chromosomes_for_species() {
         return 1
     fi
 
-    # Build the SQL query
-    # This query gets all chromosomes for a species that have gene locations
-    # Groups all Un* scaffolds (Un0001, Un0002, etc.) as "Un"
+    # Query for real chromosomes (matching db_query_helper.py logic)
+    # Joins through gene_has_location junction table
     local query="
-        SELECT DISTINCT
-            CASE
-                WHEN c.display_name LIKE 'Un%' THEN 'Un'
-                WHEN c.display_name LIKE 'Un_%' THEN 'Un'
-                ELSE c.display_name
-            END as chromosome_name
-        FROM chromosomes c
-        JOIN gene_location gl ON c.chr_id = gl.chr_id
-        JOIN genefam gf ON gl.gene_id = gf.genefam_id
+        SELECT DISTINCT c.display_name
+        FROM genefam gf
+        JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+        JOIN gene_location gl ON ghl.location_id = gl.id
+        JOIN chromosomes c ON gl.chr_id = c.chr_id
         WHERE gf.taxon_id = ${species_id}
-        ORDER BY chromosome_name;
+          AND c.taxon_id = gf.taxon_id
+          AND c.coord_system LIKE '%chromosome%'
+          AND c.display_name NOT LIKE 'Un%'
+          AND c.display_name NOT LIKE 'Un_%'
+        ORDER BY c.display_name;
     "
 
-    # Execute query and return results as comma-separated list
     local chromosomes
     chromosomes=$(mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -N -s -e "${query}" 2>/dev/null)
+
+    # Check for genes that should go in the Un file (no location, or non-chromosome coord_system)
+    local un_check_query="
+        SELECT 1
+        FROM genefam gf
+        LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+        LEFT JOIN gene_location gl ON ghl.location_id = gl.id
+        LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
+        WHERE gf.taxon_id = ${species_id}
+          AND (
+            ghl.gene_id IS NULL
+            OR (c.chr_id IS NOT NULL AND (
+                c.coord_system NOT LIKE '%chromosome%'
+                OR c.display_name LIKE 'Un%'
+                OR c.display_name LIKE 'Un_%'
+            ))
+          )
+        LIMIT 1
+    "
+
+    local has_un_genes
+    has_un_genes=$(mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -N -s -e "${un_check_query}" 2>/dev/null)
+
+    if [[ -n "${has_un_genes}" ]]; then
+        chromosomes="${chromosomes}"$'\n'"Un"
+    fi
 
     if [[ -z "${chromosomes}" ]]; then
         log_error "No chromosomes found for species ${species_id}"
         return 2
     fi
 
-    # Convert newlines to commas
     echo "$chromosomes" | tr '\n' ',' | sed 's/,$//'
     return 0
 }
