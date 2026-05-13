@@ -191,6 +191,15 @@ def main(
         if dbname:
             config.database.dbname = dbname
 
+        # Log configuration for debugging (without password)
+        console.print("[dim]Database Configuration:[/dim]")
+        console.print(f"  Host: {config.database.dbhost}")
+        console.print(f"  Port: {config.database.dbport}")
+        console.print(f"  User: {config.database.dbuser}")
+        console.print(f"  Database: {config.database.dbname}")
+        console.print(f"  Password: {'*' * len(config.database.dbpasswd) if config.database.dbpasswd else 'NOT SET'}")
+        console.print()
+
         # Validate configuration
         if not config.gcs.project_id or not config.gcs.bucket_name:
             console.print("[red]Error: GCS configuration missing. Set --project-id and --bucket-name or use env vars[/red]")

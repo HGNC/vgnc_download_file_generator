@@ -41,21 +41,32 @@ def _retry_on_mysql_error(
                 except (MySQLdb.OperationalError, MySQLdb.ProgrammingError) as e:
                     last_exception = e
 
+                    error_code = e.args[0] if len(e.args) > 0 else "unknown"
+                    error_msg = e.args[1] if len(e.args) > 1 else str(e)
+                    sqlstate = e.sqlstate if hasattr(e, 'sqlstate') else "unknown"
+
                     if attempt < max_attempts - 1:
                         delay = delays[attempt] if attempt < len(delays) else delays[-1]
                         logger.warning(
-                            "Connection attempt %d/%d failed: %s. Retrying in %d second(s)...",
+                            "Connection attempt %d/%d failed: [%s] %s (errno=%s, sqlstate=%s). "
+                            "Retrying in %d second(s)...",
                             attempt + 1,
                             max_attempts,
-                            e,
+                            type(e).__name__,
+                            error_msg,
+                            error_code,
+                            sqlstate,
                             delay,
                         )
                         time.sleep(delay)
                     else:
                         logger.error(
-                            "All %d connection attempts failed. Last error: %s",
+                            "All %d connection attempts failed. Last error: [%s] %s (errno=%s, sqlstate=%s)",
                             max_attempts,
-                            e,
+                            type(e).__name__,
+                            error_msg,
+                            error_code,
+                            sqlstate,
                             exc_info=True,
                         )
 
@@ -102,16 +113,35 @@ class DatabaseConnection:
         # connect_timeout: Timeout for establishing the connection (seconds)
         # read_timeout: Timeout for reading from the server (seconds)
         # write_timeout: Timeout for writing to the server (seconds)
-        return MySQLdb.connect(
-            host=self.config.dbhost,
-            user=self.config.dbuser,
-            passwd=self.config.dbpasswd,
-            db=self.config.dbname,
-            port=self.config.dbport,
-            connect_timeout=30,
-            read_timeout=600,
-            write_timeout=600,
-        )
+        try:
+            logger.info(
+                "Attempting MySQL connection to %s:%s as user '%s' to database '%s'",
+                self.config.dbhost,
+                self.config.dbport,
+                self.config.dbuser,
+                self.config.dbname,
+            )
+            conn = MySQLdb.connect(
+                host=self.config.dbhost,
+                user=self.config.dbuser,
+                passwd=self.config.dbpasswd,
+                db=self.config.dbname,
+                port=self.config.dbport,
+                connect_timeout=30,
+                read_timeout=600,
+                write_timeout=600,
+            )
+            logger.info("Successfully connected to MySQL database '%s'", self.config.dbname)
+            return conn
+        except MySQLdb.Error as e:
+            logger.error(
+                "MySQL connection failed: %s (errno=%d, sqlstate=%s)",
+                e.args[1] if len(e.args) > 1 else str(e),
+                e.args[0] if len(e.args) > 0 else "unknown",
+                e.sqlstate if hasattr(e, 'sqlstate') else "unknown",
+                exc_info=True,
+            )
+            raise
 
     def _create_pool(self) -> QueuePool:
         """Create and initialize SQLAlchemy QueuePool.
