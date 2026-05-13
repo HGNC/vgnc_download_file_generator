@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Helper script for database queries used by generate_all_parallel.sh.
+"""Helper script for database queries used by entrypoint.sh.
 
 This script queries the database for species and chromosome information
 and outputs results in a comma-separated format for use in bash scripts.

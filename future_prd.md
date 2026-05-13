@@ -10,8 +10,9 @@ variable:
 
 - **`all` mode** — calls the Python CLI directly for cross-species combined
   files (public, Ensembl, withdrawn).
-- **`species` mode** — runs `generate_all_parallel.sh` with GNU parallel for
-  per-species file generation (chromosomes, locus types, locus groups).
+- **`species` mode** — discovers chromosomes via `db_query_helper.py` and
+  generates all per-species files (chromosomes, locus types, locus groups)
+  using GNU parallel for concurrent CLI invocations.
 
 The Airflow DAG orchestrates execution: a `discover_species` task queries
 the database for all taxon IDs, then dynamic task mapping creates one

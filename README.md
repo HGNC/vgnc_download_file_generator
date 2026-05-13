@@ -68,16 +68,16 @@ The container entrypoint (`entrypoint.sh`) dispatches on `VGNC_MODE`:
 
 - **`all` mode** — runs the CLI directly for cross-species combined files
   (Ensembl, withdrawn, public "All").
-- **`species` mode** — runs `generate_all_parallel.sh` with GNU parallel to
-  generate all per-species files (chromosomes, locus types, locus groups).
+- **`species` mode** — discovers chromosomes via `db_query_helper.py` and
+  generates all per-species files (chromosomes, locus types, locus groups)
+  using GNU parallel for concurrent CLI invocations.
 
 The image is based on `python:3.13-slim` with `default-mysql-client`,
 `default-libmysqlclient-dev`, `build-essential`, `pkg-config`, and
 `parallel` (GNU parallel for concurrent per-chromosome file generation).
 The Dockerfile copies `pyproject.toml`, `uv.lock`, and `README.md` before
 running `uv sync --frozen --no-dev` for reproducible production builds. It
-also copies `generate_all.sh`, `generate_all_parallel.sh`,
-`run_cli_job.sh`, `db_query_helper.py`, and `entrypoint.sh`:
+also copies `db_query_helper.py` and `entrypoint.sh`:
 
 ```bash
 docker build -t vgnc-download-files .

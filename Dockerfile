@@ -13,8 +13,7 @@ RUN uv sync --frozen --no-dev
 
 COPY vgnc-download-files/src/ src/
 COPY vgnc-download-files/db_query_helper.py ./
-COPY vgnc-download-files/generate_all.sh vgnc-download-files/generate_all_parallel.sh ./
-COPY vgnc-download-files/run_cli_job.sh vgnc-download-files/entrypoint.sh ./
-RUN chmod +x generate_all.sh generate_all_parallel.sh run_cli_job.sh entrypoint.sh
+COPY vgnc-download-files/entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
