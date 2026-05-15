@@ -143,6 +143,11 @@ class FileSpec:
         # Handle "All" species specially
         is_all_species = self.species_id == "All" or self.species_name == "All"
 
+        # Special case for Withdrawn file (all species, no filters)
+        if self.file_type == "vgnc_withdrawn" and is_all_species:
+            filename = f"all_vgnc_withdrawn.{self.extension}"
+            return f"{subdir}/all/{filename}"
+
         # Normalize species name for directory and filename
         normalized_name = _normalize_species_name(self.species_name)
         species_dir = normalized_name
@@ -164,8 +169,8 @@ class FileSpec:
             else:
                 # Locus type all chromosomes
                 if is_all_species:
-                    # All species with locus type: all/locus_types/all_vgnc_gene_set_{locus_type}_All.{ext}
-                    filename = f"all_vgnc_gene_set_{locus_type_normalized}_All.{self.extension}"
+                    # All species with locus type: all/locus_types/all_{locus_type}_All.{ext}
+                    filename = f"all_{locus_type_normalized}_All.{self.extension}"
                     return f"{subdir}/all/locus_types/{filename}"
                 else:
                     filename = f"{species_dir}_{locus_type_normalized}_All.{self.extension}"
@@ -174,7 +179,7 @@ class FileSpec:
         # Check locus_group next
         if self.locus_group is not None:
             # Convert spaces and hyphens to underscores for clean URLs, lowercase
-            locus_group_normalized = self.locus_group.replace(" ", "_").replace("-", "_").replace(",", "_").lower()
+            locus_group_normalized = self.locus_group.replace(" ", "_").replace(",", "_").lower()
             if self.chromosome is not None:
                 # Locus group + chromosome
                 if is_all_species:
@@ -187,8 +192,8 @@ class FileSpec:
             else:
                 # Locus group all chromosomes
                 if is_all_species:
-                    # All species with locus group: all/locus_groups/all_vgnc_gene_set_{locus_group}_All.{ext}
-                    filename = f"all_vgnc_gene_set_{locus_group_normalized}_All.{self.extension}"
+                    # All species with locus group: all/locus_groups/all_{locus_group}_All.{ext}
+                    filename = f"all_{locus_group_normalized}_All.{self.extension}"
                     return f"{subdir}/all/locus_groups/{filename}"
                 else:
                     filename = f"{species_dir}_{locus_group_normalized}_All.{self.extension}"

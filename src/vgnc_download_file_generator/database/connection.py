@@ -135,7 +135,7 @@ class DatabaseConnection:
             return conn
         except MySQLdb.Error as e:
             logger.error(
-                "MySQL connection failed: %s (errno=%d, sqlstate=%s)",
+                "MySQL connection failed: %s (errno=%s, sqlstate=%s)",
                 e.args[1] if len(e.args) > 1 else str(e),
                 e.args[0] if len(e.args) > 0 else "unknown",
                 e.sqlstate if hasattr(e, 'sqlstate') else "unknown",

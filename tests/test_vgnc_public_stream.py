@@ -234,6 +234,6 @@ class TestVgncPublicStreamRows:
 
         # Verify split query pattern:
         # 1 get_streaming_cursor call for gene data
-        # 3 get_cursor calls for xrefs, aliases, dates
+        # 1 get_cursor call for sub-queries (xrefs, aliases, dates reuse same cursor)
         assert calls.count("get_streaming_cursor") == 1
-        assert calls.count("get_cursor") == 3
+        assert calls.count("get_cursor") == 1
