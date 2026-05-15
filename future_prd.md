@@ -8,8 +8,11 @@ The functionality described in this PRD is implemented through a two-mode
 architecture in `entrypoint.sh`, controlled by the `VGNC_MODE` environment
 variable:
 
-- **`all` mode** — calls the Python CLI directly for cross-species combined
-  files (public, Ensembl, withdrawn).
+- **`all` mode** — generates cross-species combined files (public, Ensembl,
+  withdrawn) and cross-species per-locus-type and per-locus-group files.
+- **`all-species` mode** — generates all cross-species files (same as `all`),
+  then discovers all species from the database and generates per-species
+  files. Used by the `scripts/run_all_species.sh` helper.
 - **`species` mode** — discovers chromosomes via `db_query_helper.py` and
   generates all per-species files (chromosomes, locus types, locus groups)
   using GNU parallel for concurrent CLI invocations.
@@ -23,8 +26,8 @@ The script provides:
 - ✅ Auto-discovery of species from database (Airflow `discover_species` task)
 - ✅ Auto-discovery of chromosomes for each species (`db_query_helper.py`)
 - ✅ Per-species chromosome file generation
-- ✅ Per-species locus type file generation (protein-coding, pseudogene)
-- ✅ Per-species locus group file generation (protein-coding gene, pseudogene)
+- ✅ Per-species locus type file generation (5 types: gene with protein product, RNA long non-coding, RNA small nucleolar, pseudogene, unknown)
+- ✅ Per-species locus group file generation (4 groups: protein-coding gene, non-coding RNA, pseudogene, other)
 - ✅ "All" species files (vgnc_public, vgnc_ensembl, vgnc_withdrawn)
 - ✅ Both TSV and JSON format generation
 - ✅ Parallel execution via GNU parallel (within each species task)

@@ -178,7 +178,7 @@ class FileSpec:
 
         # Check locus_group next
         if self.locus_group is not None:
-            # Convert spaces and hyphens to underscores for clean URLs, lowercase
+            # Convert spaces to underscores, remove commas, preserve hyphens, lowercase
             locus_group_normalized = self.locus_group.replace(",", "").replace(" ", "_").lower()
             if self.chromosome is not None:
                 # Locus group + chromosome

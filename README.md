@@ -36,7 +36,7 @@ All configuration is provided via environment variables injected by Cloud Run:
 | `GCS_BUCKET` | GCS bucket name | — |
 | `GCS_PROJECT_ID` | GCP project ID | — |
 | `GCS_PREFIX` | Path prefix for GCS objects | `vgnc/` |
-| `VGNC_MODE` | Operating mode (`all` or `species`) | `species` |
+| `VGNC_MODE` | Operating mode (`all`, `all-species`, or `species`) | `species` |
 | `VGNC_SPECIES` | Species taxon ID (used only when `VGNC_MODE=species`) | `9913` |
 | `VGNC_FORMATS` | Output formats | `tsv,json` |
 
@@ -66,8 +66,11 @@ uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --dr
 
 The container entrypoint (`entrypoint.sh`) dispatches on `VGNC_MODE`:
 
-- **`all` mode** — runs the CLI directly for cross-species combined files
-  (Ensembl, withdrawn, public "All").
+- **`all` mode** — generates cross-species combined files (public, Ensembl,
+  withdrawn) and cross-species per-locus-type and per-locus-group files.
+- **`all-species` mode** — generates all cross-species files (same as `all`),
+  then discovers all species from the database and generates per-species
+  files. Used by the `scripts/run_all_species.sh` helper.
 - **`species` mode** — discovers chromosomes via `db_query_helper.py` and
   generates all per-species files (chromosomes, locus types, locus groups)
   using GNU parallel for concurrent CLI invocations.
@@ -115,20 +118,39 @@ src/vgnc_download_file_generator/
 ```text
 {GCS_PREFIX}/
 ├── json/
+│   ├── all/
+│   │   ├── all_vgnc_gene_set_All.json
+│   │   ├── all_vgnc_gene_set_chr{chromosome}.json
+│   │   ├── all_vgnc_withdrawn.json
+│   │   ├── locus_types/
+│   │   │   └── all_{locus_type}_All.json
+│   │   └── locus_groups/
+│   │       └── all_{locus_group}_All.json
 │   └── {species}/
+│       ├── {species}_vgnc_gene_set_All.json
 │       ├── {species}_vgnc_gene_set_chr_{chromosome}.json
 │       ├── locus_types/
+│       │   └── {species}_{locus_type}_All.json
 │       └── locus_groups/
+│           └── {species}_{locus_group}_All.json
 ├── tsv/
+│   ├── all/
+│   │   ├── all_vgnc_gene_set_All.tsv
+│   │   ├── all_vgnc_gene_set_chr{chromosome}.tsv
+│   │   ├── all_vgnc_withdrawn.tsv
+│   │   ├── locus_types/
+│   │   │   └── all_{locus_type}_All.tsv
+│   │   └── locus_groups/
+│   │       └── all_{locus_group}_All.tsv
 │   └── {species}/
-│       ├── {species}_vgnc_gene_set_chr_{chromosome}.txt
+│       ├── {species}_vgnc_gene_set_All.tsv
+│       ├── {species}_vgnc_gene_set_chr_{chromosome}.tsv
 │       ├── locus_types/
+│       │   └── {species}_{locus_type}_All.tsv
 │       └── locus_groups/
-├── ensembl/
-│   └── VGNC_to_Ensembl_mapping.txt
-└── withdrawn/
-    └── {species}/
-        └── {species}_withdrawn.txt
+│           └── {species}_{locus_group}_All.tsv
+└── ensembl/
+    └── VGNC_to_Ensembl_mapping.txt
 ```
 
 ## Error handling

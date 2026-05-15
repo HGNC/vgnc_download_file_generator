@@ -83,15 +83,15 @@ class TestLociConstants:
 
     def test_locus_types(self) -> None:
         """Test that locus types match expected values."""
-        locus_types = ["gene with protein product", "pseudogene"]
-        assert len(locus_types) == 2
+        locus_types = ["gene with protein product", "RNA, long non-coding", "RNA, small nucleolar", "pseudogene", "unknown"]
+        assert len(locus_types) == 5
         assert "gene with protein product" in locus_types
         assert "pseudogene" in locus_types
 
     def test_locus_groups(self) -> None:
         """Test that locus groups match expected values."""
-        locus_groups = ["protein-coding gene", "pseudogene"]
-        assert len(locus_groups) == 2
+        locus_groups = ["protein-coding gene", "non-coding RNA", "pseudogene", "other"]
+        assert len(locus_groups) == 4
         assert "protein-coding gene" in locus_groups
         assert "pseudogene" in locus_groups
 
