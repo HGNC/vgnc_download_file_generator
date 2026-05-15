@@ -156,7 +156,7 @@ class FileSpec:
         # Check locus_type first (highest priority)
         if self.locus_type is not None:
             # Convert spaces to underscores for clean URLs
-            locus_type_normalized = self.locus_type.replace(" ", "_").replace(",", "_").lower()
+            locus_type_normalized = self.locus_type.replace(",", "").replace(" ", "_").lower()
             if self.chromosome is not None:
                 # Locus type + chromosome
                 if is_all_species:
@@ -179,7 +179,7 @@ class FileSpec:
         # Check locus_group next
         if self.locus_group is not None:
             # Convert spaces and hyphens to underscores for clean URLs, lowercase
-            locus_group_normalized = self.locus_group.replace(" ", "_").replace(",", "_").lower()
+            locus_group_normalized = self.locus_group.replace(",", "").replace(" ", "_").lower()
             if self.chromosome is not None:
                 # Locus group + chromosome
                 if is_all_species:

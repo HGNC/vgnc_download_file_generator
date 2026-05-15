@@ -13,8 +13,8 @@ FORMATS="${VGNC_FORMATS:-tsv,json}"
 
 IFS=',' read -ra FORMAT_ARRAY <<< "${FORMATS}"
 
-LOCUS_TYPES=("gene with protein product" "pseudogene")
-LOCUS_GROUPS=("protein-coding gene" "pseudogene")
+LOCUS_TYPES=("gene with protein product" "RNA, long non-coding" "RNA, small nucleolar" "pseudogene" "unknown")
+LOCUS_GROUPS=("protein-coding gene" "non-coding RNA" "pseudogene" "other")
 
 discover_chromosomes() {
     local species_id="$1"
