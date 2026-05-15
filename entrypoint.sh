@@ -141,11 +141,40 @@ generate_species_files() {
     return 0
 }
 
+discover_all_species() {
+    local species_csv
+    species_csv=$(${DB_HELPER} species 2>/dev/null) || species_csv=""
+    echo "${species_csv}"
+}
+
 if [[ "${MODE}" == "all" ]]; then
     echo "[INFO] Generating cross-species combined files (mode=all)"
     ${CLI_CMD} --species "All" --formats "${FORMATS}"
     ${CLI_CMD} --species "All" --file-type "vgnc_ensembl" --formats "${FORMATS}"
     ${CLI_CMD} --species "All" --file-type "vgnc_withdrawn" --formats "${FORMATS}"
+elif [[ "${MODE}" == "all-species" ]]; then
+    echo "[INFO] Generating cross-species combined files (mode=all-species)"
+    ${CLI_CMD} --species "All" --formats "${FORMATS}"
+    ${CLI_CMD} --species "All" --file-type "vgnc_ensembl" --formats "${FORMATS}"
+    ${CLI_CMD} --species "All" --file-type "vgnc_withdrawn" --formats "${FORMATS}"
+
+    echo "[INFO] Discovering species from database..."
+    SPECIES_CSV=$(discover_all_species)
+
+    if [[ -z "${SPECIES_CSV}" ]]; then
+        echo "[WARN] No species found in database." >&2
+        exit 0
+    fi
+
+    IFS=',' read -ra ALL_SPECIES <<< "${SPECIES_CSV}"
+    echo "[INFO] Found ${#ALL_SPECIES[@]} species: ${SPECIES_CSV}"
+
+    for species_id in "${ALL_SPECIES[@]}"; do
+        echo "[INFO] --- Species ${species_id} ---"
+        generate_species_files "${species_id}"
+    done
+
+    echo "[INFO] All species completed."
 elif [[ "${MODE}" == "species" ]]; then
     generate_species_files "${SPECIES}"
 else
