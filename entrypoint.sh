@@ -147,16 +147,33 @@ discover_all_species() {
     echo "${species_csv}"
 }
 
+generate_all_species_files() {
+    echo "[INFO] Generating cross-species combined files"
+    ${CLI_CMD} --species "All" --formats "${FORMATS}"
+    ${CLI_CMD} --species "All" --file-type "vgnc_ensembl" --formats "${FORMATS}"
+    ${CLI_CMD} --species "All" --file-type "vgnc_withdrawn" --formats "${FORMATS}"
+
+    echo "[INFO] Generating cross-species per-locus-type files"
+    for locus_type in "${LOCUS_TYPES[@]}"; do
+        for format in "${FORMAT_ARRAY[@]}"; do
+            format=$(echo "${format}" | xargs)
+            ${CLI_CMD} --species "All" --locus-type "${locus_type}" --formats "${format}"
+        done
+    done
+
+    echo "[INFO] Generating cross-species per-locus-group files"
+    for locus_group in "${LOCUS_GROUPS[@]}"; do
+        for format in "${FORMAT_ARRAY[@]}"; do
+            format=$(echo "${format}" | xargs)
+            ${CLI_CMD} --species "All" --locus-group "${locus_group}" --formats "${format}"
+        done
+    done
+}
+
 if [[ "${MODE}" == "all" ]]; then
-    echo "[INFO] Generating cross-species combined files (mode=all)"
-    ${CLI_CMD} --species "All" --formats "${FORMATS}"
-    ${CLI_CMD} --species "All" --file-type "vgnc_ensembl" --formats "${FORMATS}"
-    ${CLI_CMD} --species "All" --file-type "vgnc_withdrawn" --formats "${FORMATS}"
+    generate_all_species_files
 elif [[ "${MODE}" == "all-species" ]]; then
-    echo "[INFO] Generating cross-species combined files (mode=all-species)"
-    ${CLI_CMD} --species "All" --formats "${FORMATS}"
-    ${CLI_CMD} --species "All" --file-type "vgnc_ensembl" --formats "${FORMATS}"
-    ${CLI_CMD} --species "All" --file-type "vgnc_withdrawn" --formats "${FORMATS}"
+    generate_all_species_files
 
     echo "[INFO] Discovering species from database..."
     SPECIES_CSV=$(discover_all_species)
