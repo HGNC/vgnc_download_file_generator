@@ -109,7 +109,7 @@ class VgncWithdrawn(BaseFileGenerator):
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
-        filters["status_id"] = [6, 11, 12]
+        filters["status_id"] = [2, 3]
 
         column_map = self._get_column_map()
 
