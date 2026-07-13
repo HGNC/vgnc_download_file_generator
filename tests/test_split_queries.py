@@ -61,6 +61,37 @@ class TestBuildGeneDataQuery:
         assert "c.display_name" in sql
         assert ":chromosome" in sql
 
+    def test_build_gene_data_query_filters_default_assembly(self) -> None:
+        """Location must come from the species' default VGNC assembly only.
+
+        Without this filter a gene emits one row per assembly it has a
+        location on (the ABHD12 / VGNC:14936 bug produced 4 rows). The fix
+        joins `assembly` on gene_has_location.assembly_id and restricts to
+        `is_vgnc_default = 1` and matching `taxon_id`.
+        """
+        query = build_gene_data_query(filters={"taxon_id": 9913})
+        sql = query.text
+
+        # Must join assembly via gene_has_location.assembly_id
+        assert "JOIN assembly a ON ghl.assembly_id = a.id" in sql
+        # Must restrict to the species' default VGNC assembly
+        assert "a.is_vgnc_default = 1" in sql
+        # Must scope the assembly to the gene's own species
+        assert "a.taxon_id = gf.taxon_id" in sql
+
+    def test_build_gene_data_query_default_assembly_is_left_join(self) -> None:
+        """The default-assembly predicate must be a LEFT JOIN ON-condition.
+
+        Putting it in WHERE would drop genes that have no default-assembly
+        location; the ON-clause keeps them (with NULL location).
+        """
+        query = build_gene_data_query(filters=None)
+        sql = query.text
+
+        assert "LEFT JOIN assembly a ON ghl.assembly_id = a.id" in sql
+        # The default-assembly predicate must live in the ON clause
+        assert "AND a.is_vgnc_default = 1" in sql
+
     def test_chromosome_filter_un_uses_like(self) -> None:
         """Test that 'Un' chromosome uses LIKE for prefix matching.
 
