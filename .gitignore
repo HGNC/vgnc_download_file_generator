@@ -51,3 +51,4 @@ __pycache__
 vgnc-pipeline-dev.json
 # Pi agent local state
 .pi/
+.pi-subagents

@@ -1,6 +1,6 @@
 # Spec: Fix VGNC download-file data correctness
 
-> Status: in-progress
+> Status: review-fixes-applied (pending pre-deploy DB validation)
 > Branch: `fix/vgnc-data-correctness` (off `gcp`)
 
 ## Problem
@@ -70,8 +70,21 @@ default (`assembly.is_vgnc_default = 1` and `assembly.taxon_id = gf.taxon_id`).
 ## Tasks (each Task.Verify line IS the RED test)
 
 ### Task 1 — Location: one row per gene on the default assembly
-- **Change:** add `LEFT JOIN assembly a ON ghl.assembly_id = a.id AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id` to `build_gene_data_query`.
-- **Verify:** `test_build_gene_data_query_filters_default_assembly` asserts the generated SQL joins `assembly` on `ghl.assembly_id = a.id` and contains `a.is_vgnc_default = 1` and `a.taxon_id = gf.taxon_id`.
+- **Change:** restrict `gene_has_location` itself to the default assembly via a
+  correlated EXISTS on the `ghl` JOIN condition
+  (`EXISTS (SELECT 1 FROM assembly a WHERE a.id = ghl.assembly_id AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id)`).
+  - **Why EXISTS, not a bare `LEFT JOIN assembly a ...`:** a bare assembly join is
+    INERT — no `a.*` column is selected and `gene_location`/`chromosomes` join off
+    `ghl` directly, so every `gene_has_location` row still emits one output row
+    (the original 4-rows-per-gene bug). Reviewer reproduction confirmed 4 rows for
+    the bare-join shape and 1 row for the EXISTS shape. The EXISTS lives on the
+    `ghl` JOIN (not WHERE) so genes with no default-assembly location are preserved.
+- **Verify:** `test_build_gene_data_query_filters_ghl_to_default_assembly` (EXISTS
+  structure) and `test_build_gene_data_query_has_no_inert_assembly_join` (no bare
+  `LEFT JOIN assembly a ON ghl.assembly_id = a.id`); plus behavioral
+  `test_default_assembly_filter_collapses_to_one_row_per_gene` (in-memory SQLite:
+  a gene with 4 locations across 4 assemblies yields 1 row; a locationless gene is
+  preserved with NULL location).
 
 ### Task 2 — Xrefs: swap ncbi_id / ensembl_gene_id
 - **Change:** in `build_xrefs_query`, map `external_db_id = 2 → ncbi_gene_id` and `external_db_id = 1 → ensembl_gene_id`.
@@ -88,3 +101,80 @@ default (`assembly.is_vgnc_default = 1` and `assembly.taxon_id = gf.taxon_id`).
   `assembly.is_vgnc_default`, `assembly.taxon_id`). No schema file in repo;
   confirmed by the user-provided reference query.
 - Splitting the pipe string relies on UniProt IDs never containing `|` (true).
+
+
+## Review outcomes (parallel review pass)
+
+Three fresh-context reviewers ran. Synthesis:
+
+- **BLOCKER (Reviewer 1, correctness):** the first Task 1 attempt used a bare
+  `LEFT JOIN assembly a ...` which is inert (no `a.*` selected; `gl`/`c` join off
+  `ghl`). Confirmed by reproduction: 4 rows for ABHD12, not 1. **Fixed** by moving
+  the filter to a correlated EXISTS on the `ghl` JOIN. The original RED test was a
+  substring check that passed against the broken SQL — replaced with a structural
+  test for the EXISTS shape + a regression guard against the inert join + a
+  behavioral SQLite test.
+- **BLOCKER (Reviewer 2, tests):** `VgncEnsembl` JSON-array path and the TSV
+  pipe-separated `uniprot_ids` path were untested. **Fixed** — added
+  `TestVgncEnsemblUniprotArray` and `TestVgncPublicTsvUniprotPipe`.
+- **Note (Reviewer 3):** `assembly` schema is unverified in-repo (no schema file).
+  Correctness rests on invariants: (i) exactly one default assembly per species,
+  (ii) at most one location per default assembly. **Gated on pre-deploy validation
+  (below).**
+- **Note (Reviewer 3):** `GROUP_CONCAT` for uniprot has no `ORDER BY` →
+  non-deterministic element order. Accepted (low severity; most genes have 0-1
+  UniProt IDs). Adding `ORDER BY` inside `GROUP_CONCAT(DISTINCT CASE ...)` carries
+  MySQL-syntax risk that cannot be validated without a live DB, so it is deferred.
+
+## Pre-deploy validation (read-only, run against the VGNC DB before shipping to GCS)
+
+Gate the GCS ship on all of these:
+
+```sql
+-- (A) Confirm the assembly / gene_has_location columns the JOIN depends on exist.
+SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'assembly' AND COLUMN_NAME IN ('id','is_vgnc_default','taxon_id');
+-- and: COLUMN_NAME = 'assembly_id' for TABLE_NAME = 'gene_has_location'
+
+-- (B) Invariant (i): each species has EXACTLY ONE default assembly.
+--     Any row here means the location join can still fan out.
+SELECT taxon_id, COUNT(*) AS n_default FROM assembly
+WHERE is_vgnc_default = 1 GROUP BY taxon_id HAVING COUNT(*) <> 1;
+
+-- (C) ABHD12 / VGNC:14936 must now yield exactly ONE row (was 4).
+SELECT gf.assigned_id, gf.assigned_symbol, c.display_name AS chr, gl.start, gl.end, gl.strand
+FROM genefam gf
+LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+    AND EXISTS (SELECT 1 FROM assembly a WHERE a.id = ghl.assembly_id
+                AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id)
+LEFT JOIN gene_location gl ON ghl.location_id = gl.id
+LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
+WHERE gf.assigned_id = 'VGNC:14936';
+
+-- (D) Confirm external_db_id semantics: 1 = Ensembl, 2 = NCBI/Entrez.
+SELECT x.external_db_id, ed.name, COUNT(*) AS n
+FROM gene_has_xrefs ghx JOIN xref x ON ghx.xref_id = x.id
+JOIN external_db ed ON x.external_db_id = ed.id
+WHERE x.external_db_id IN (1,2) GROUP BY x.external_db_id, ed.name;
+
+-- (E) Spot-check ABHD12 xrefs land in the right columns.
+SELECT x.external_db_id, x.xref FROM genefam gf
+JOIN gene_has_xrefs ghx ON gf.genefam_id = ghx.genefam_id
+JOIN xref x ON ghx.xref_id = x.id
+WHERE gf.assigned_id = 'VGNC:14936' AND x.external_db_id IN (1,2,3,15);
+-- expect: ext_db 1 values look like ENSxxx (Ensembl),
+--         ext_db 2 values look like integers (NCBI Entrez).
+```
+
+Acceptance: (B)=0 rows, (C)=1 row, (D) labels match (Ensembl/NCBI), (E) value
+shapes match.
+
+## Known limitations
+
+- `uniprot_ids` element order in output is non-deterministic (DB row order); the
+  set of IDs is correct. See Review outcomes.
+- `_pipe_string_to_list` keeps whitespace-only segments (e.g. `" "`); UniProt IDs
+  never contain stray whitespace, so practical impact is nil.
+- `generate_json_rows` is duplicated between `VgncPublic` and `VgncEnsembl`
+  (pre-existing); the new array-rendering block is duplicated too. TODO: hoist
+  `generate_json_rows` + the `_array_json_fields` loop into `BaseFileGenerator`.

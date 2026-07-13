@@ -246,3 +246,43 @@ class TestVgncPublicGenerateTsv:
         assert "VGNC:1" in split_lines[1]
         assert "VGNC:2" in split_lines[2]
         assert split_lines[3] == ""  # Trailing newline produces empty string
+
+
+class TestVgncPublicTsvUniprotPipe:
+    """TSV must keep uniprot_ids as a pipe-separated string (not arrayified)."""
+
+    def test_tsv_uniprot_ids_remains_pipe_separated_string(self) -> None:
+        """uniprot_ids arrives as a GROUP_CONCAT pipe string; TSV emits it as-is."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        generator = VgncPublic(
+            db=db, species=species, chromosome=None, locus_group=None, locus_type=None
+        )
+        generator.stream_rows = lambda chunk_size=5000, batch_size=5000: iter(  # type: ignore[method-assign]  # noqa: ARG005
+            [[{"vgnc_id": "VGNC:1", "uniprot_ids": "Q9H0A9|P12345"}]]
+        )
+
+        tsv_lines = list(generator.generate_tsv_rows())
+        headers = generator.get_headers("txt")
+        idx = headers.index("uniprot_ids")
+        data_fields = tsv_lines[1].rstrip("\n").split("\t")
+
+        assert data_fields[idx] == "Q9H0A9|P12345"
+
+    def test_tsv_uniprot_ids_none_is_empty_cell(self) -> None:
+        """A NULL uniprot_ids renders as an empty TSV cell (not 'None'/'[]')."""
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        generator = VgncPublic(
+            db=db, species=species, chromosome=None, locus_group=None, locus_type=None
+        )
+        generator.stream_rows = lambda chunk_size=5000, batch_size=5000: iter(  # type: ignore[method-assign]  # noqa: ARG005
+            [[{"vgnc_id": "VGNC:1", "uniprot_ids": None}]]
+        )
+
+        tsv_lines = list(generator.generate_tsv_rows())
+        headers = generator.get_headers("txt")
+        idx = headers.index("uniprot_ids")
+        data_fields = tsv_lines[1].rstrip("\n").split("\t")
+
+        assert data_fields[idx] == ""
