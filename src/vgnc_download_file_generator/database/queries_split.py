@@ -194,9 +194,9 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     """Build query for all external database references (xrefs).
 
     Uses conditional aggregation to fetch all 6 xref types in a single query:
-    - NCBI Gene ID (external_db_id = 1)
-    - Ensembl Gene ID (external_db_id = 2)
-    - UniProt IDs (external_db_id IN (3, 15))
+    - NCBI Gene ID (external_db_id = 2)
+    - Ensembl Gene ID (external_db_id = 1)
+    - UniProt IDs (external_db_id IN (3, 15)) -- one gene may have several
     - PubMed ID (external_db_id = 28)
     - HGNC Orthologs (external_db_id = 5)
     - BGD ID (external_db_id = 24)
@@ -215,8 +215,8 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql = """
         SELECT
             ghx.genefam_id,
-            MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ncbi_gene_id,
-            MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ensembl_gene_id,
+            MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ncbi_gene_id,
+            MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ensembl_gene_id,
             MAX(CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END) AS uniprot_ids,
             MAX(CASE WHEN x.external_db_id = 28 THEN x.xref END) AS pubmed_id,
             MAX(CASE WHEN x.external_db_id = 5 THEN x.xref END) AS hgnc_orthologs,

@@ -182,6 +182,26 @@ class TestBuildXrefsQuery:
         # Should use CASE WHEN or MAX with conditional logic
         assert "CASE" in sql or "MAX" in sql
 
+    def test_xrefs_ncbi_uses_external_db_id_2(self) -> None:
+        """In the VGNC DB external_db_id = 2 is the NCBI/Entrez Gene ID.
+
+        The old code mapped external_db_id = 1 -> ncbi, which shipped Ensembl
+        IDs into the ncbi_id column. Confirm the corrected mapping.
+        """
+        query = build_xrefs_query()
+        sql = query.text
+        assert "external_db_id = 2 THEN x.xref END) AS ncbi_gene_id" in sql
+
+    def test_xrefs_ensembl_uses_external_db_id_1(self) -> None:
+        """In the VGNC DB external_db_id = 1 is the Ensembl Gene ID.
+
+        The old code mapped external_db_id = 2 -> ensembl, shipping NCBI IDs
+        into the ensembl_gene_id column. Confirm the corrected mapping.
+        """
+        query = build_xrefs_query()
+        sql = query.text
+        assert "external_db_id = 1 THEN x.xref END) AS ensembl_gene_id" in sql
+
     def test_groups_by_genefam_id(self) -> None:
         """Test that query groups by genefam_id."""
         query = build_xrefs_query()
