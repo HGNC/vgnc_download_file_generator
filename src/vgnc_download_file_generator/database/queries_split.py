@@ -217,7 +217,7 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
             ghx.genefam_id,
             MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ncbi_gene_id,
             MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ensembl_gene_id,
-            MAX(CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END) AS uniprot_ids,
+            GROUP_CONCAT(DISTINCT CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END SEPARATOR '|') AS uniprot_ids,
             MAX(CASE WHEN x.external_db_id = 28 THEN x.xref END) AS pubmed_id,
             MAX(CASE WHEN x.external_db_id = 5 THEN x.xref END) AS hgnc_orthologs,
             MAX(CASE WHEN x.external_db_id = 24 THEN x.xref END) AS bgd_id

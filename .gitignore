@@ -49,3 +49,5 @@ WARP.md
 .coverage
 __pycache__
 vgnc-pipeline-dev.json
+# Pi agent local state
+.pi/

@@ -202,6 +202,19 @@ class TestBuildXrefsQuery:
         sql = query.text
         assert "external_db_id = 1 THEN x.xref END) AS ensembl_gene_id" in sql
 
+    def test_xrefs_uniprot_uses_group_concat(self) -> None:
+        """uniprot_ids must aggregate multiple UniProt IDs per gene.
+
+        A gene can have several UniProt IDs (external_db_id IN (3, 15)); the
+        old MAX(...) collapsed them to a single value. Use GROUP_CONCAT with a
+        pipe separator so JSON can render them as an array.
+        """
+        query = build_xrefs_query()
+        sql = query.text
+
+        assert "GROUP_CONCAT(DISTINCT CASE WHEN x.external_db_id IN (3, 15)" in sql
+        assert "SEPARATOR '|')" in sql
+        assert "AS uniprot_ids" in sql
     def test_groups_by_genefam_id(self) -> None:
         """Test that query groups by genefam_id."""
         query = build_xrefs_query()

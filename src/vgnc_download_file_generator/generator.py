@@ -126,3 +126,39 @@ class BaseFileGenerator(ABC):
         )
 
         return spec.gcs_path()
+
+
+    def _array_json_fields(self) -> set[str]:
+        """Return the set of output header names that serialize as JSON arrays.
+
+        Subclasses override this for multi-valued fields (e.g. ``uniprot_ids``,
+        which arrives as a pipe-separated GROUP_CONCAT string). The default is
+        an empty set, so scalar-only generators are unaffected.
+
+        Returns:
+            Set of output header names to render as JSON arrays
+        """
+        return set()
+
+    @staticmethod
+    def _pipe_string_to_list(value: Any) -> list[str] | None:
+        """Convert a pipe-separated string (SQL GROUP_CONCAT) into a list.
+
+        - ``None`` stays ``None`` (preserves JSON null for missing data, matching
+          the treatment of other scalar fields).
+        - An empty string becomes an empty list.
+        - Otherwise the string is split on ``|`` and empty segments dropped.
+
+        Args:
+            value: A pipe-separated string, None, or (already) a list
+
+        Returns:
+            None, an empty list, or a list of non-empty string segments
+        """
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return value
+        if value == "":
+            return []
+        return [part for part in str(value).split("|") if part]

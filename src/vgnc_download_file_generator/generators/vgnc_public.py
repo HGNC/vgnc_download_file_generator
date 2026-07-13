@@ -86,6 +86,10 @@ class VgncPublic(BaseFileGenerator):
             "prev_name": "prev_name",
         }
 
+    def _array_json_fields(self) -> set[str]:
+        """Output headers that serialize as JSON arrays."""
+        return {"uniprot_ids"}
+
     def get_headers(self, extension: str) -> list[str]:  # noqa: ARG002
         """Get column headers for the file format.
 
@@ -282,6 +286,12 @@ class VgncPublic(BaseFileGenerator):
 
                 # Convert date objects to ISO format strings for JSON serialization
                 obj = self._serialize_dates(obj)
+
+                # Render multi-valued fields (e.g. uniprot_ids, arriving as a
+                # pipe-separated GROUP_CONCAT string) as JSON arrays.
+                for field in self._array_json_fields():
+                    if field in obj:
+                        obj[field] = self._pipe_string_to_list(obj[field])
 
                 # Serialize the object to JSON
                 yield json.dumps(obj, ensure_ascii=False)
