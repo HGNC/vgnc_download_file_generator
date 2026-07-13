@@ -144,6 +144,7 @@ class VgncPublic(BaseFileGenerator):
             fetch_sub_data_for_batch,
             merge_gene_results,
         )
+        from vgnc_download_file_generator.validation import make_validator
 
         filters: dict[str, str | int | list[str]] = {}
 
@@ -162,6 +163,10 @@ class VgncPublic(BaseFileGenerator):
         filters["status_id"] = [6, 11, 12]
 
         column_map = self._get_column_map()
+
+        # Runtime ID-format validation (Task 4). Created per file-generation
+        # run so violation counts accumulate across the whole stream.
+        self._validator = make_validator()
 
         gene_query = build_gene_data_query(filters=filters if filters else None)
         gene_cursor = self.db.get_streaming_cursor()
@@ -206,8 +211,8 @@ class VgncPublic(BaseFileGenerator):
         if output_chunk:
             yield output_chunk
 
-    @staticmethod
     def _process_batch(
+        self,
         gene_batch: list[dict[str, Any]],
         sub_cursor: Any,
         column_map: dict[str, str],
@@ -232,6 +237,7 @@ class VgncPublic(BaseFileGenerator):
         xrefs, aliases, dates = fetch_sub_fn(genefam_ids, sub_cursor, compile_fn)
         merged = merge_fn(gene_batch, xrefs, aliases, dates)
         for merged_row in merged:
+            self._validator.check(merged_row)
             yield {
                 column_map.get(db_col, db_col): value
                 for db_col, value in merged_row.items()

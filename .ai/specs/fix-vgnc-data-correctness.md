@@ -1,6 +1,6 @@
 # Spec: Fix VGNC download-file data correctness
 
-> Status: review-fixes-applied (pending pre-deploy DB validation)
+> Status: review-fixes-applied + runtime ID validation (pending pre-deploy DB validation)
 > Branch: `fix/vgnc-data-correctness` (off `gcp`)
 
 ## Problem
@@ -178,3 +178,34 @@ shapes match.
 - `generate_json_rows` is duplicated between `VgncPublic` and `VgncEnsembl`
   (pre-existing); the new array-rendering block is duplicated too. TODO: hoist
   `generate_json_rows` + the `_array_json_fields` loop into `BaseFileGenerator`.
+
+### Task 4 — Runtime ID-format validation (pydantic) — prevention of recurrence
+
+**Goal:** a swap or malformed ID must fail the run in production, not just in
+tests. Add runtime validation of each record's ID fields against authoritative
+formats, applied to every streamed record before it is mapped/yielded.
+
+**Authoritative formats (from web research + schema):**
+- `assigned_id` (VGNC ID): `^VGNC:\d+$`
+- `ncbi_gene_id` (Entrez): `^\d+$`
+- `ensembl_gene_id`: `^ENS[A-Z]{0,4}G\d{11}$` (ENS + ≤4-letter species prefix + G + 11 digits)
+- `uniprot_ids` (each pipe segment): `^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$`
+- `pubmed_id`: `^\d+$`
+
+**Design:**
+- `validation.py`: pydantic v2 `VgncIdRecord` (per-record format check, `extra="ignore"`,
+  None/"" allowed) + `RecordValidator` enforcing a per-field **grace threshold**.
+- Failure mode via env `VGNC_VALIDATION_MODE` = `strict` (default) | `warn`;
+  `VGNC_VALIDATION_GRACE` (default 50).
+- **Why grace < chunk_size (5000):** `stream_rows` only yields a chunk every
+  `chunk_size` rows, so a systematic violation (e.g. a swap = 100% bad) raises at
+  row `grace+1` (<< 5000) — before any data chunk is yielded, so no bad data rows
+  reach GCS (only the header). Legacy outliers (≤ grace) are tolerated + logged.
+- Wired into both generators' `_process_batch` on the pre-mapping merged dict
+  (DB column names), so it covers all output formats regardless of header naming.
+
+**Verify (RED first):** `tests/test_validation.py` — valid IDs pass; swapped
+(ncbi=ENS…, ensembl=digits) and malformed values raise; None/"" pass; UniProt
+multi-segment. `RecordValidator` raises in strict after grace exceeded, tolerates
+≤ grace, never raises in warn. Generator `_process_batch` raises on a systematic
+swap.
