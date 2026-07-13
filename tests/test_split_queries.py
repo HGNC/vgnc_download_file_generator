@@ -61,36 +61,106 @@ class TestBuildGeneDataQuery:
         assert "c.display_name" in sql
         assert ":chromosome" in sql
 
-    def test_build_gene_data_query_filters_default_assembly(self) -> None:
-        """Location must come from the species' default VGNC assembly only.
+    def test_build_gene_data_query_filters_ghl_to_default_assembly(self) -> None:
+        """The default-assembly filter must RESTRICT gene_has_location rows.
 
-        Without this filter a gene emits one row per assembly it has a
-        location on (the ABHD12 / VGNC:14936 bug produced 4 rows). The fix
-        joins `assembly` on gene_has_location.assembly_id and restricts to
-        `is_vgnc_default = 1` and matching `taxon_id`.
+        A predicate on a separate ``LEFT JOIN assembly a ...`` is inert when no
+        ``a.*`` column is selected and ``gene_location``/``chromosomes`` join off
+        ``ghl`` directly -- every location row still emits one output row (the
+        ABHD12 / VGNC:14936 4-row bug). The filter must live on the ``ghl`` JOIN
+        itself as a correlated EXISTS, so non-default-assembly location rows are
+        excluded.
         """
         query = build_gene_data_query(filters={"taxon_id": 9913})
         sql = query.text
 
-        # Must join assembly via gene_has_location.assembly_id
-        assert "JOIN assembly a ON ghl.assembly_id = a.id" in sql
-        # Must restrict to the species' default VGNC assembly
+        # The assembly filter must be a correlated EXISTS on the ghl join
+        assert "EXISTS" in sql
+        assert "FROM assembly a" in sql
+        assert "a.id = ghl.assembly_id" in sql
         assert "a.is_vgnc_default = 1" in sql
-        # Must scope the assembly to the gene's own species
         assert "a.taxon_id = gf.taxon_id" in sql
 
-    def test_build_gene_data_query_default_assembly_is_left_join(self) -> None:
-        """The default-assembly predicate must be a LEFT JOIN ON-condition.
-
-        Putting it in WHERE would drop genes that have no default-assembly
-        location; the ON-clause keeps them (with NULL location).
-        """
+    def test_build_gene_data_query_has_no_inert_assembly_join(self) -> None:
+        """There must NOT be a standalone LEFT JOIN assembly whose columns are
+        never selected / depended on -- that filter is a no-op (regression guard
+        for the inert-join bug found in review)."""
         query = build_gene_data_query(filters=None)
         sql = query.text
 
-        assert "LEFT JOIN assembly a ON ghl.assembly_id = a.id" in sql
-        # The default-assembly predicate must live in the ON clause
-        assert "AND a.is_vgnc_default = 1" in sql
+        assert "LEFT JOIN assembly a ON ghl.assembly_id = a.id" not in sql
+
+    def test_default_assembly_filter_collapses_to_one_row_per_gene(self) -> None:
+        """Behavioral proof (in-memory SQLite) that restricting
+        gene_has_location to the species' default assembly yields exactly one
+        row per gene even when the gene has locations on multiple assemblies,
+        while still preserving genes that have no location at all.
+
+        This validates the EXISTS join pattern that
+        ``test_build_gene_data_query_filters_ghl_to_default_assembly`` asserts
+        is present in the production query. (The production query itself is
+        MySQL-specific -- CONCAT/CAST -- so it cannot run on SQLite; this test
+        exercises the load-bearing relational logic in isolation.)
+        """
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE genefam (genefam_id INTEGER, taxon_id INTEGER, assigned_id TEXT);
+            CREATE TABLE gene_has_location (gene_id INTEGER, location_id INTEGER, assembly_id INTEGER);
+            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER);
+            CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER);
+            CREATE TABLE chromosomes (chr_id INTEGER, display_name TEXT, taxon_id INTEGER);
+            """
+        )
+        # Gene 1 (VGNC:14936 analog): 4 locations on 4 assemblies; only assembly 1 is default.
+        cur.execute("INSERT INTO genefam VALUES (1, 9913, 'VGNC:14936')")
+        cur.executemany(
+            "INSERT INTO assembly VALUES (?, ?, ?)",
+            [(1, 9913, 1), (2, 9913, 0), (3, 9913, 0), (4, 9913, 0)],
+        )
+        cur.executemany(
+            "INSERT INTO gene_has_location VALUES (?, ?, ?)",
+            [(1, 101, 1), (1, 102, 2), (1, 103, 3), (1, 104, 4)],
+        )
+        cur.executemany(
+            "INSERT INTO gene_location VALUES (?, ?, ?, ?)",
+            [(101, 7, 1000, 2000), (102, 8, 3000, 4000), (103, 9, 5000, 6000), (104, 10, 7000, 8000)],
+        )
+        cur.executemany(
+            "INSERT INTO chromosomes VALUES (?, ?, ?)",
+            [(7, "1", 9913), (8, "1", 9913), (9, "1", 9913), (10, "1", 9913)],
+        )
+        # Gene 2: no location at all.
+        cur.execute("INSERT INTO genefam VALUES (2, 9913, 'VGNC:99999')")
+
+        rows = cur.execute(
+            """
+            SELECT gf.genefam_id, gf.assigned_id, c.display_name, gl.start
+            FROM genefam gf
+            LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+                AND EXISTS (SELECT 1 FROM assembly a
+                            WHERE a.id = ghl.assembly_id
+                              AND a.is_vgnc_default = 1
+                              AND a.taxon_id = gf.taxon_id)
+            LEFT JOIN gene_location gl ON ghl.location_id = gl.id
+            LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
+            """
+        ).fetchall()
+        conn.close()
+
+        by_gene: dict[int, list] = {}
+        for gid, _aid, chr_, start in rows:
+            by_gene.setdefault(gid, []).append((chr_, start))
+
+        # Multi-assembly gene collapses to exactly one row (the default assembly).
+        assert len(by_gene[1]) == 1, f"gene 1 should have 1 row, got {len(by_gene[1])}"
+        assert by_gene[1][0][1] == 1000  # default assembly's start
+        # Locationless gene is still emitted (LEFT JOIN preserved), with NULL location.
+        assert len(by_gene[2]) == 1, "locationless gene must be preserved"
+        assert by_gene[2][0][0] is None
 
     def test_chromosome_filter_un_uses_like(self) -> None:
         """Test that 'Un' chromosome uses LIKE for prefix matching.
