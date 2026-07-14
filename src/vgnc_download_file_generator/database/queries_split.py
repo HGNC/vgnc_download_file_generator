@@ -66,12 +66,7 @@ def build_gene_data_query(
             gl.strand,
             gl.band,
             fn.id AS gene_family_id,
-            fn.name AS gene_family,
-            CONCAT(
-                COALESCE(c.display_name, ''),
-                ':',
-                COALESCE(CAST(gl.start AS CHAR), '')
-            ) AS location_sortable
+            fn.name AS gene_family
         FROM genefam gf
         LEFT JOIN gene_has_locus_type ghtlt ON gf.genefam_id = ghtlt.genefam_id
         LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id

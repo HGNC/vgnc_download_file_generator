@@ -248,3 +248,56 @@ class TestVgncPublicGetHeaders:
 
         # primary_db_id should be last
         assert headers[-1] == "primary_db_id"
+
+
+class TestFormatLocationSortable:
+    """location_sortable = location (chromosome) with only single-digit numeric
+    chromosomes zero-padded; multi-digit numerics and non-numeric labels are
+    unchanged. Coordinates must never appear. (Spec Task 6.)"""
+
+    def test_pads_single_digit_numerics(self) -> None:
+        from vgnc_download_file_generator.generators.vgnc_public import (
+            format_location_sortable,
+        )
+
+        for chromosome, expected in [("1", "01"), ("2", "02"), ("5", "05"), ("9", "09")]:
+            assert format_location_sortable(chromosome) == expected
+
+    def test_leaves_two_digit_numerics_unchanged(self) -> None:
+        from vgnc_download_file_generator.generators.vgnc_public import (
+            format_location_sortable,
+        )
+
+        for chromosome in ["10", "11", "18", "22", "29"]:
+            assert format_location_sortable(chromosome) == chromosome
+
+    def test_leaves_non_numeric_labels_unchanged(self) -> None:
+        """X, Y, MT and scaffold labels are NOT numbered, so never padded."""
+        from vgnc_download_file_generator.generators.vgnc_public import (
+            format_location_sortable,
+        )
+
+        for chromosome in ["X", "Y", "MT", "Un", "Un0001", "Z"]:
+            assert format_location_sortable(chromosome) == chromosome
+
+    def test_never_appends_coordinates(self) -> None:
+        """Regression guard: no ':' or start coordinate may appear in the value."""
+        from vgnc_download_file_generator.generators.vgnc_public import (
+            format_location_sortable,
+        )
+
+        for chromosome in ["1", "5", "18", "X", "MT"]:
+            value = format_location_sortable(chromosome)
+            assert value is not None
+            assert ":" not in value
+            # Value must be the chromosome (optionally zero-padded), never a
+            # coordinate like "5:101040473".
+            assert value.endswith(chromosome)
+
+    def test_passes_none_and_empty_through(self) -> None:
+        from vgnc_download_file_generator.generators.vgnc_public import (
+            format_location_sortable,
+        )
+
+        assert format_location_sortable(None) is None
+        assert format_location_sortable("") == ""

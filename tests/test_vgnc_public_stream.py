@@ -309,3 +309,71 @@ class TestVgncPublicRuntimeValidation:
             )
         )
         assert len(rows) == 20
+
+
+class TestVgncPublicLocationSortable:
+    """_process_batch must derive location_sortable from the chromosome (Spec Task 6)."""
+
+    def _generator(self):
+        from vgnc_download_file_generator.validation import RecordValidator
+
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen._validator = RecordValidator(mode="strict", grace=50)  # type: ignore[attr-defined]
+        return gen
+
+    def test_process_batch_derives_padded_location_sortable(self) -> None:
+        """Single-digit chrom is padded; two-digit and X unchanged; no coordinates."""
+        from vgnc_download_file_generator.database.queries_split import (
+            merge_gene_results,
+        )
+
+        gene_batch = [
+            {"genefam_id": 1, "assigned_id": "VGNC:1", "chromosome": "5"},
+            {"genefam_id": 2, "assigned_id": "VGNC:2", "chromosome": "18"},
+            {"genefam_id": 3, "assigned_id": "VGNC:3", "chromosome": "X"},
+        ]
+
+        def fetch_sub(_ids, _cur, _cfn):
+            return ([], [], [])
+
+        gen = self._generator()
+        column_map = gen._get_column_map()
+        rows = list(
+            gen._process_batch(
+                gene_batch, MagicMock(), column_map, _no_compile,
+                fetch_sub, merge_gene_results,
+            )
+        )
+        by_id = {r["vgnc_id"]: r for r in rows}
+
+        assert by_id["VGNC:1"]["location"] == "5"
+        assert by_id["VGNC:1"]["location_sortable"] == "05"
+        assert by_id["VGNC:2"]["location"] == "18"
+        assert by_id["VGNC:2"]["location_sortable"] == "18"
+        assert by_id["VGNC:3"]["location"] == "X"
+        assert by_id["VGNC:3"]["location_sortable"] == "X"
+
+    def test_process_batch_locationless_gene_has_none_location_sortable(self) -> None:
+        """A gene with no location emits None for both location and location_sortable."""
+        from vgnc_download_file_generator.database.queries_split import (
+            merge_gene_results,
+        )
+
+        gene_batch = [{"genefam_id": 1, "assigned_id": "VGNC:1", "chromosome": None}]
+
+        def fetch_sub(_ids, _cur, _cfn):
+            return ([], [], [])
+
+        gen = self._generator()
+        column_map = gen._get_column_map()
+        rows = list(
+            gen._process_batch(
+                gene_batch, MagicMock(), column_map, _no_compile,
+                fetch_sub, merge_gene_results,
+            )
+        )
+
+        assert rows[0]["location"] is None
+        assert rows[0]["location_sortable"] is None

@@ -11,6 +11,30 @@ from typing import Any
 from vgnc_download_file_generator.generator import BaseFileGenerator
 
 
+def format_location_sortable(chromosome: str | None) -> str | None:
+    """Return the chromosome formatted for lexical sorting.
+
+    ``location_sortable`` is defined as ``location`` (the chromosome) with
+    single-digit numeric chromosomes zero-padded so they sort before two-digit
+    chromosomes (e.g. ``1`` -> ``01`` so ``01`` < ``18``). Only *numbered*
+    chromosomes are padded; multi-digit numerics (``10``..``29``) and
+    non-numeric labels (``X``, ``Y``, ``MT``, ``Un``) are returned unchanged,
+    and ``None``/empty pass through unchanged. Genomic coordinates are never
+    included.
+
+    Args:
+        chromosome: The chromosome display name (a.k.a. ``location``), or None.
+
+    Returns:
+        The zero-padded chromosome for single-digit numerics, else unchanged.
+    """
+    if not chromosome:
+        return chromosome
+    if len(chromosome) == 1 and chromosome.isdigit():
+        return f"0{chromosome}"
+    return chromosome
+
+
 class VgncPublic(BaseFileGenerator):
     """Generator for VGNC Public gene set files.
 
@@ -238,10 +262,17 @@ class VgncPublic(BaseFileGenerator):
         merged = merge_fn(gene_batch, xrefs, aliases, dates)
         for merged_row in merged:
             self._validator.check(merged_row)
-            yield {
+            mapped = {
                 column_map.get(db_col, db_col): value
                 for db_col, value in merged_row.items()
             }
+            # location_sortable is location (the chromosome) with single-digit
+            # numeric chromosomes zero-padded for correct lexical sort. Derived
+            # in Python, not SQL, so the rule is unit-testable and free of
+            # MySQL-specific functions (CONCAT/REGEXP). See format_location_sortable.
+            if "location" in mapped:
+                mapped["location_sortable"] = format_location_sortable(mapped["location"])
+            yield mapped
 
     def generate_tsv_rows(self) -> Generator[str]:
         """Generate TSV-formatted rows as strings.

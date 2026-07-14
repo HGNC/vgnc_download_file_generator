@@ -227,3 +227,34 @@ never deleted).
 
 **Verify:** `TestPartialFileCleanup` -- non-compressed deletes on exception and
 not on success; compressed skips upload on exception and uploads once on success.
+
+### Task 6 — `location_sortable` is the zero-padded chromosome only (no coordinates)
+
+**Goal:** shipped `location_sortable` must match the documented definition ("Same
+as `location` but single-digit chromosomes are prefixed with a 0 … e.g. `02q34`"),
+restricted to the VGNC design where `location` is the bare chromosome. Genomic
+coordinates must NOT appear in the field.
+
+**Confirmed vs. live production data** (`cattle_vgnc_gene_set_All.tsv`):
+`location` = bare chromosome (e.g. `18`, `5`, `X`); the old pipeline (and the
+rewrite before this task) shipped `location_sortable` = `chromosome:start`
+(e.g. `18:65641103`, `5:101040473`) with **no zero-padding at all** — so the field
+wasn't even sortable (`1:...` sorts after `18:...` lexicographically). This task
+fixes the FORMAT of bug #2, which Task 1 only addressed row-wise.
+
+**Rule (per user):** `location_sortable` = `location` (the chromosome) with **only
+single-digit numeric chromosomes** zero-padded: `1`-`9` -> `01`-`09`. Two-digit
+numerics (`10`...`29`) and non-numeric labels (`X`, `Y`, `MT`, `Un`) are
+unchanged. `None`/empty -> unchanged.
+
+**Design:** derive in Python from the mapped `location`, not in SQL.
+* New pure fn `format_location_sortable(chromosome)` in `generators/vgnc_public.py`
+  (zero-pad iff `len==1 and isdigit()`). Real-behavior tested; DB-dialect-free.
+* `VgncPublic._process_batch` injects `location_sortable` from mapped `location`.
+* Remove the dead `CONCAT(display_name, ':', CAST(gl.start AS CHAR)) AS
+  location_sortable` from `build_gene_data_query`.
+
+**Verify (RED first):** `tests/test_vgnc_public.py` pads `1`->`01` ... `9`->`09`,
+leaves `10`/`18`/`X`/`Y`/`MT`/`Un` and `None`/`""` unchanged.
+`tests/test_vgnc_public_stream.py` `_process_batch` -> `"05"` for `chromosome="5"`,
+`"X"` for `"X"`, `None` for a locationless gene.
