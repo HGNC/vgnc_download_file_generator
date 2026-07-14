@@ -1,6 +1,6 @@
 # Spec: Fix VGNC download-file data correctness
 
-> Status: review-fixes-applied + runtime ID validation (pending pre-deploy DB validation)
+> Status: review-fixes-applied + runtime ID validation + partial-file cleanup (pending pre-deploy DB validation)
 > Branch: `fix/vgnc-data-correctness` (off `gcp`)
 
 ## Problem
@@ -209,3 +209,21 @@ formats, applied to every streamed record before it is mapped/yielded.
 multi-segment. `RecordValidator` raises in strict after grace exceeded, tolerates
 ≤ grace, never raises in warn. Generator `_process_batch` raises on a systematic
 swap.
+
+### Task 5 — GCS writer deletes partial files on failure
+
+**Goal:** a failed generation (e.g. runtime validation aborting a swapped column)
+must not leave a partial object in GCS.
+
+**Change:** `GCSStreamWriter.open_write_stream` now tracks success and, on any
+exception in the write body:
+- non-compressed path: closes the stream, then best-effort deletes the blob
+  (`_safe_delete`, errors logged not raised);
+- compressed path: skips `upload_from_filename` entirely (the partial gzip temp
+  is cleaned up), so nothing is uploaded.
+
+Successful writes are unchanged (compressed uploads exactly once; non-compressed
+never deleted).
+
+**Verify:** `TestPartialFileCleanup` -- non-compressed deletes on exception and
+not on success; compressed skips upload on exception and uploads once on success.

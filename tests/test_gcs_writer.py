@@ -943,3 +943,97 @@ class TestPathPrefix:
         ]
         actual_calls = [call[0][0] for call in mock_bucket.blob.call_args_list]
         assert actual_calls == expected_calls
+
+
+class TestPartialFileCleanup:
+    """A failed write must not leave a partial object in GCS."""
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_non_compressed_deletes_blob_on_exception(self, mock_storage) -> None:
+        """Exception in the write body -> partial blob is deleted; stream closed."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        class Boom(Exception):
+            pass
+
+        with self._raises(Boom), writer.open_write_stream("data.txt", "text/plain") as stream:
+            stream.write("partial")
+            raise Boom("validation failed")
+
+        # Partial object deleted and stream closed
+        mock_blob.delete.assert_called_once()
+        mock_stream.close.assert_called_once()
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_non_compressed_does_not_delete_on_success(self, mock_storage) -> None:
+        """Successful write -> blob is NOT deleted."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_stream = MagicMock()
+        mock_blob.open.return_value = mock_stream
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        with writer.open_write_stream("data.txt", "text/plain") as stream:
+            stream.write("ok")
+
+        mock_blob.delete.assert_not_called()
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.gzip")
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_compressed_skips_upload_on_exception(self, mock_storage, _mock_gzip) -> None:
+        """Compressed write that fails mid-stream must NOT upload the partial gzip."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        class Boom(Exception):
+            pass
+
+        with self._raises(Boom), writer.open_write_stream("data.txt", "text/plain", compress=True) as f:
+            f.write("partial")
+            raise Boom("validation failed")
+
+        mock_blob.upload_from_filename.assert_not_called()
+
+    @patch("vgnc_download_file_generator.writers.gcs_writer.gzip")
+    @patch("vgnc_download_file_generator.writers.gcs_writer.storage")
+    def test_compressed_uploads_on_success(self, mock_storage, _mock_gzip) -> None:
+        """Compressed write that completes uploads exactly once."""
+        mock_client = MagicMock()
+        mock_storage.Client.return_value = mock_client
+        mock_bucket = MagicMock()
+        mock_client.bucket.return_value = mock_bucket
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+
+        writer = GCSStreamWriter(bucket_name="test-bucket", project_id="test-project")
+
+        with writer.open_write_stream("data.txt", "text/plain", compress=True) as f:
+            f.write("ok")
+
+        mock_blob.upload_from_filename.assert_called_once()
+
+    @staticmethod
+    def _raises(exc):
+        import pytest
+
+        return pytest.raises(exc)

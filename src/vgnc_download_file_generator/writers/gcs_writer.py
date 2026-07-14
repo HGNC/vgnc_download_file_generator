@@ -211,6 +211,7 @@ class GCSStreamWriter:
             with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".gz") as tmp_file:
                 tmp_path = tmp_file.name
 
+            success = False
             try:
                 # Create a gzip file wrapper
                 with gzip.open(tmp_path, "wb") as gzip_file:
@@ -234,23 +235,46 @@ class GCSStreamWriter:
 
                     wrapper = _GzipWriteWrapper(gzip_file)
                     yield wrapper
+                success = True
+                # Only upload the complete, cleanly-closed gzip file on success;
+                # a failed body leaves no partial object in GCS.
+                blob.upload_from_filename(tmp_path, content_type="application/gzip")
             finally:
-                # Upload the compressed file to GCS
-                try:
-                    blob.upload_from_filename(tmp_path, content_type="application/gzip")
-                finally:
-                    # Clean up temp file
-                    import pathlib
-                    pathlib.Path(tmp_path).unlink(missing_ok=True)
+                # Clean up temp file whether or not the upload ran.
+                Path(tmp_path).unlink(missing_ok=True)
         else:
             # Non-compressed: use streaming upload
             stream = self._open_blob_with_retry(blob)
+            success = False
             try:
                 yield stream
+                success = True
             finally:
-                stream.close()
+                with suppress(Exception):
+                    stream.close()
+                if not success:
+                    # The body raised; closing the stream may have committed a
+                    # partial object. Delete it so bad/partial data never lands.
+                    self._safe_delete(blob)
         # Note: Bucket uses uniform bucket-level access
         # Public access is granted via IAM policy, not object ACLs
+
+    def _safe_delete(self, blob: storage.Blob) -> None:
+        """Best-effort deletion of a partial GCS object after a failed write.
+
+        Used when the write body raises so that a partial/bad object never
+        remains in GCS. Errors are logged and swallowed so cleanup never masks
+        the original exception.
+        """
+        try:
+            blob.delete()
+            logger.info("Deleted partial GCS object after failed write: %s", blob.name)
+        except Exception:
+            logger.warning(
+                "Could not delete partial GCS object after failed write: %s",
+                blob.name,
+                exc_info=True,
+            )
 
     @retry_with_exponential_backoff(max_retries=3, initial_backoff=1, multiplier=2)
     def _open_blob_with_retry(self, blob: storage.Blob) -> Any:
