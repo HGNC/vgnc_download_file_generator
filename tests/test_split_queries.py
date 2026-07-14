@@ -252,39 +252,45 @@ class TestBuildXrefsQuery:
         # Should use CASE WHEN or MAX with conditional logic
         assert "CASE" in sql or "MAX" in sql
 
-    def test_xrefs_ncbi_uses_external_db_id_2(self) -> None:
-        """In the VGNC DB external_db_id = 2 is the NCBI/Entrez Gene ID.
-
-        The old code mapped external_db_id = 1 -> ncbi, which shipped Ensembl
-        IDs into the ncbi_id column. Confirm the corrected mapping.
-        """
+    def test_xrefs_ncbi_uses_ncbi_gene_resource_name(self) -> None:
+        """Map NCBI by stable database_resource.db_name, not hardcoded IDs."""
         query = build_xrefs_query()
         sql = query.text
-        assert "external_db_id = 2 THEN x.xref END) AS ncbi_gene_id" in sql
+        assert "dr.db_name = 'ncbi_gene' THEN x.xref END) AS ncbi_gene_id" in sql
 
-    def test_xrefs_ensembl_uses_external_db_id_1(self) -> None:
-        """In the VGNC DB external_db_id = 1 is the Ensembl Gene ID.
-
-        The old code mapped external_db_id = 2 -> ensembl, shipping NCBI IDs
-        into the ensembl_gene_id column. Confirm the corrected mapping.
-        """
+    def test_xrefs_ensembl_uses_ensembl_gene_resource_name(self) -> None:
+        """Map Ensembl by stable database_resource.db_name, not numeric ID."""
         query = build_xrefs_query()
         sql = query.text
-        assert "external_db_id = 1 THEN x.xref END) AS ensembl_gene_id" in sql
+        assert "dr.db_name = 'ensembl_gene' THEN x.xref END) AS ensembl_gene_id" in sql
 
     def test_xrefs_uniprot_uses_group_concat(self) -> None:
-        """uniprot_ids must aggregate multiple UniProt IDs per gene.
-
-        A gene can have several UniProt IDs (external_db_id IN (3, 15)); the
-        old MAX(...) collapsed them to a single value. Use GROUP_CONCAT with a
-        pipe separator so JSON can render them as an array.
-        """
+        """uniprot_ids must aggregate UniProt values by db_name=uniprot_protein."""
         query = build_xrefs_query()
         sql = query.text
 
-        assert "GROUP_CONCAT(DISTINCT CASE WHEN x.external_db_id IN (3, 15)" in sql
-        assert "SEPARATOR '|')" in sql
+        assert "GROUP_CONCAT" in sql
+        assert "dr.db_name = 'uniprot_protein'" in sql
+        assert "SEPARATOR '|'" in sql
         assert "AS uniprot_ids" in sql
+
+    def test_xrefs_pubmed_uses_pubmed_resource_name(self) -> None:
+        """PubMed mapping must use db_name='pubmed'."""
+        query = build_xrefs_query()
+        sql = query.text
+        assert "dr.db_name = 'pubmed' THEN x.xref END) AS pubmed_id" in sql
+
+    def test_xrefs_hgnc_ortholog_uses_hgnc_ortholog_resource_name(self) -> None:
+        """HGNC ortholog mapping must use db_name='hgnc_ortholog'."""
+        query = build_xrefs_query()
+        sql = query.text
+        assert "dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs" in sql
+
+    def test_xrefs_joins_database_resource(self) -> None:
+        """The query must join database_resource to resolve stable db_name values."""
+        query = build_xrefs_query()
+        sql = query.text
+        assert "JOIN database_resource dr ON x.external_db_id = dr.id" in sql
     def test_groups_by_genefam_id(self) -> None:
         """Test that query groups by genefam_id."""
         query = build_xrefs_query()

@@ -197,13 +197,18 @@ def build_gene_data_query(
 def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     """Build query for all external database references (xrefs).
 
-    Uses conditional aggregation to fetch all 6 xref types in a single query:
-    - NCBI Gene ID (external_db_id = 2)
-    - Ensembl Gene ID (external_db_id = 1)
-    - UniProt IDs (external_db_id IN (3, 15)) -- one gene may have several
-    - PubMed ID (external_db_id = 28)
-    - HGNC Orthologs (external_db_id = 5)
-    - BGD ID (external_db_id = 24)
+    Uses conditional aggregation to fetch all 6 xref types in a single query.
+
+    IMPORTANT: map by ``database_resource.db_name`` (stable semantic key)
+    instead of hardcoded ``external_db_id`` integers, which can vary across DB
+    snapshots/clones.
+
+    - NCBI Gene ID (db_name = ``ncbi_gene``)
+    - Ensembl Gene ID (db_name = ``ensembl_gene``)
+    - UniProt IDs (db_name = ``uniprot_protein``) -- one gene may have several
+    - PubMed ID (db_name = ``pubmed``)
+    - HGNC Orthologs (db_name = ``hgnc_ortholog``)
+    - BGD ID (db_name = ``bgd_gene``)
 
     Args:
         genefam_ids: List of genefam_ids to filter (from main query results)
@@ -219,14 +224,18 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql = """
         SELECT
             ghx.genefam_id,
-            MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ncbi_gene_id,
-            MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ensembl_gene_id,
-            GROUP_CONCAT(DISTINCT CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END SEPARATOR '|') AS uniprot_ids,
-            MAX(CASE WHEN x.external_db_id = 28 THEN x.xref END) AS pubmed_id,
-            MAX(CASE WHEN x.external_db_id = 5 THEN x.xref END) AS hgnc_orthologs,
-            MAX(CASE WHEN x.external_db_id = 24 THEN x.xref END) AS bgd_id
+            MAX(CASE WHEN dr.db_name = 'ncbi_gene' THEN x.xref END) AS ncbi_gene_id,
+            MAX(CASE WHEN dr.db_name = 'ensembl_gene' THEN x.xref END) AS ensembl_gene_id,
+            GROUP_CONCAT(
+                DISTINCT CASE WHEN dr.db_name = 'uniprot_protein' THEN x.xref END
+                SEPARATOR '|'
+            ) AS uniprot_ids,
+            MAX(CASE WHEN dr.db_name = 'pubmed' THEN x.xref END) AS pubmed_id,
+            MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs,
+            MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id
         FROM gene_has_xrefs ghx
         JOIN xref x ON ghx.xref_id = x.id
+        JOIN database_resource dr ON x.external_db_id = dr.id
         WHERE ghx.created_by = 1
     """
 
