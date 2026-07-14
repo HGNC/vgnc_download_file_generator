@@ -7,6 +7,11 @@ from vgnc_download_file_generator.generators.vgnc_public import VgncPublic
 from vgnc_download_file_generator.models.species import SpeciesInfo
 
 
+def _no_compile(*_args, **_kwargs):
+    """Stand-in for compile_query_for_mysql (unused when fetch_sub is mocked)."""
+    return "", ()
+
+
 class TestVgncPublicStreamRows:
     """Tests for VgncPublic.stream_rows() method."""
 
@@ -237,3 +242,70 @@ class TestVgncPublicStreamRows:
         # 1 get_cursor call for sub-queries (xrefs, aliases, dates reuse same cursor)
         assert calls.count("get_streaming_cursor") == 1
         assert calls.count("get_cursor") == 1
+
+
+class TestVgncPublicRuntimeValidation:
+    """Runtime ID-format validation wired into _process_batch (Task 4)."""
+
+    def _generator(self, mode="strict", grace=5):
+        from vgnc_download_file_generator.validation import RecordValidator
+
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen._validator = RecordValidator(mode=mode, grace=grace)  # type: ignore[attr-defined]
+        return gen
+
+    def test_process_batch_raises_on_systematic_swap(self) -> None:
+        """A swapped xref column (ncbi holds Ensembl values) must abort the batch."""
+        from vgnc_download_file_generator.database.queries_split import (
+            merge_gene_results,
+        )
+
+        gene_batch = [{"genefam_id": i, "assigned_id": f"VGNC:{i}"} for i in range(10)]
+        # Simulate the original bug: ncbi_gene_id holds Ensembl IDs.
+        swapped_xrefs = [
+            {"genefam_id": i, "ncbi_gene_id": f"ENSG00000{i:06d}", "ensembl_gene_id": str(i)}
+            for i in range(10)
+        ]
+        def fetch_sub(_ids, _cur, _cfn):
+            return (swapped_xrefs, [], [])
+
+        gen = self._generator(mode="strict", grace=5)
+        column_map = gen._get_column_map()
+
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            list(
+                gen._process_batch(
+                    gene_batch, MagicMock(), column_map, _no_compile,
+                    fetch_sub, merge_gene_results,
+                )
+            )
+
+    def test_process_batch_passes_valid_records(self) -> None:
+        """Well-formed records stream through without raising."""
+        from vgnc_download_file_generator.database.queries_split import (
+            merge_gene_results,
+        )
+
+        gene_batch = [{"genefam_id": i, "assigned_id": f"VGNC:{i}"} for i in range(20)]
+        valid_xrefs = [
+            {"genefam_id": i, "ncbi_gene_id": str(i), "ensembl_gene_id": f"ENSG00000{i:06d}"}
+            for i in range(20)
+        ]
+        def fetch_sub(_ids, _cur, _cfn):
+            return (valid_xrefs, [], [])
+
+        gen = self._generator(mode="strict", grace=0)
+        column_map = gen._get_column_map()
+
+        rows = list(
+            gen._process_batch(
+                gene_batch, MagicMock(), column_map, lambda *_a, **_k: ("", ()),
+                fetch_sub, merge_gene_results,
+            )
+        )
+        assert len(rows) == 20

@@ -374,3 +374,47 @@ class TestVgncPublicGenerateJson:
         obj = json.loads(json_objects[0])
         assert obj["date_approved"] == "2024-01-15"
         assert isinstance(obj["date_approved"], str)
+
+
+class TestVgncPublicUniprotArray:
+    """uniprot_ids must render as a JSON array; ensembl_gene_id stays a string."""
+
+    def _generator_with(self, rows: list[dict]) -> VgncPublic:
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen.stream_rows = lambda _chunk_size=5000, _batch_size=5000: iter([rows])  # type: ignore[method-assign]
+        return gen
+
+    def test_json_uniprot_ids_rendered_as_array(self) -> None:
+        """A pipe-separated GROUP_CONCAT string becomes a JSON array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "uniprot_ids": "Q9H0A9|P12345"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["uniprot_ids"] == ["Q9H0A9", "P12345"]
+        assert isinstance(obj["uniprot_ids"], list)
+
+    def test_json_uniprot_ids_single_value_is_array(self) -> None:
+        """A single UniProt ID is still wrapped in a one-element array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "uniprot_ids": "Q9H0A9"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["uniprot_ids"] == ["Q9H0A9"]
+
+    def test_json_uniprot_ids_none_is_null(self) -> None:
+        """No UniProt data (NULL from GROUP_CONCAT) stays JSON null, consistent
+        with other scalar fields."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "uniprot_ids": None}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["uniprot_ids"] is None
+
+    def test_json_uniprot_ids_empty_string_is_empty_array(self) -> None:
+        """An empty string round-trips to an empty array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "uniprot_ids": ""}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["uniprot_ids"] == []
+
+    def test_json_ensembl_gene_id_stays_string(self) -> None:
+        """ensembl_gene_id must NOT be arrayified; it stays a plain string."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "ensembl_gene_id": "ENSACAG00000001234"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["ensembl_gene_id"] == "ENSACAG00000001234"
+        assert isinstance(obj["ensembl_gene_id"], str)

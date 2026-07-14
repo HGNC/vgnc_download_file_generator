@@ -49,6 +49,12 @@ The script provides:
 - ✅ Empty file detection - skips files with no data before GCS upload
 - ✅ Cross-species chromosome contamination prevention (taxon_id filtering)
 - ✅ Unlocated gene handling - genes without location data go to "Un" file
+- ✅ Default-assembly location filter - one canonical location per gene (no more
+  one-row-per-assembly duplication); ncbi_id/ensembl_gene_id mapping corrected;
+  uniprot_ids rendered as a JSON array
+- ✅ Runtime ID-format validation (pydantic) - aborts on malformed/swapped IDs
+  before writing to GCS (VGNC_VALIDATION_MODE / VGNC_VALIDATION_GRACE)
+- ✅ Partial-file cleanup - failed writes delete incomplete GCS objects
 
 ## Overview
 

@@ -14,6 +14,9 @@ Airflow.
 - Direct streaming uploads to GCS
 - Empty file detection to prevent blank uploads
 - Retry logic with exponential backoff
+- Runtime ID-format validation (pydantic): aborts on malformed or swapped
+  cross-reference IDs (e.g. NCBI/Ensembl) before any data is written to GCS
+- Partial-file cleanup: deletes incomplete GCS objects when a generation fails
 
 ## Requirements
 
@@ -39,6 +42,8 @@ All configuration is provided via environment variables injected by Cloud Run:
 | `VGNC_MODE` | Operating mode (`all`, `all-species`, or `species`) | `species` |
 | `VGNC_SPECIES` | Species taxon ID (used only when `VGNC_MODE=species`) | `9913` |
 | `VGNC_FORMATS` | Output formats | `tsv,json` |
+| `VGNC_VALIDATION_MODE` | ID-format validation: `strict` (abort on bad IDs) or `warn` (log only) | `strict` |
+| `VGNC_VALIDATION_GRACE` | Max tolerated ID violations per field before aborting (strict mode) | `50` |
 
 ## Local development
 
@@ -96,6 +101,7 @@ src/vgnc_download_file_generator/
 ├── __main__.py            # CLI entry point
 ├── config.py              # Pydantic configuration (env vars)
 ├── generator.py           # Base file generator class
+├── validation.py          # Runtime ID-format validation (pydantic)
 ├── database/
 │   ├── connection.py      # MySQL connection
 │   ├── queries.py         # SQL query utilities
@@ -158,6 +164,10 @@ src/vgnc_download_file_generator/
 - 3 retries with exponential backoff (1s, 2s, 4s)
 - Transient errors: `ServiceUnavailable`, `DeadlineExceeded`
 - Structured logging with retry attempt details
+- Runtime ID-format validation aborts the run on a systematic violation
+  (e.g. a swapped cross-reference column) before data reaches GCS; see
+  `VGNC_VALIDATION_MODE` / `VGNC_VALIDATION_GRACE`
+- Failed writes delete any partial GCS object so incomplete files don't linger
 
 ## Troubleshooting
 

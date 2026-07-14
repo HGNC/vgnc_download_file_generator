@@ -23,7 +23,11 @@ def build_gene_data_query(
     - Basic gene data (genefam table)
     - Gene status (gene_status)
     - Locus type and group (locus_type, locus_group)
-    - Genomic location (gene_has_location, gene_location, chromosomes)
+    - Genomic location (gene_has_location, assembly, gene_location, chromosomes).
+      The gene_has_location join is restricted to the species' default VGNC
+      assembly via a correlated EXISTS (assembly.is_vgnc_default = 1 and matching
+      taxon_id) so each gene emits exactly one canonical location instead of one
+      row per assembly.
     - Gene family (gene_has_family, family_new)
 
     Xrefs, aliases, and dates are fetched in separate queries.
@@ -73,6 +77,12 @@ def build_gene_data_query(
         LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id
         LEFT JOIN locus_group lg ON lt.locus_group_id = lg.id
         LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
+            AND EXISTS (
+                SELECT 1 FROM assembly a
+                WHERE a.id = ghl.assembly_id
+                    AND a.is_vgnc_default = 1
+                    AND a.taxon_id = gf.taxon_id
+            )
         LEFT JOIN gene_location gl ON ghl.location_id = gl.id
         LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
         LEFT JOIN gene_status gs ON gf.status_id = gs.id
@@ -188,9 +198,9 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     """Build query for all external database references (xrefs).
 
     Uses conditional aggregation to fetch all 6 xref types in a single query:
-    - NCBI Gene ID (external_db_id = 1)
-    - Ensembl Gene ID (external_db_id = 2)
-    - UniProt IDs (external_db_id IN (3, 15))
+    - NCBI Gene ID (external_db_id = 2)
+    - Ensembl Gene ID (external_db_id = 1)
+    - UniProt IDs (external_db_id IN (3, 15)) -- one gene may have several
     - PubMed ID (external_db_id = 28)
     - HGNC Orthologs (external_db_id = 5)
     - BGD ID (external_db_id = 24)
@@ -209,9 +219,9 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql = """
         SELECT
             ghx.genefam_id,
-            MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ncbi_gene_id,
-            MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ensembl_gene_id,
-            MAX(CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END) AS uniprot_ids,
+            MAX(CASE WHEN x.external_db_id = 2 THEN x.xref END) AS ncbi_gene_id,
+            MAX(CASE WHEN x.external_db_id = 1 THEN x.xref END) AS ensembl_gene_id,
+            GROUP_CONCAT(DISTINCT CASE WHEN x.external_db_id IN (3, 15) THEN x.xref END SEPARATOR '|') AS uniprot_ids,
             MAX(CASE WHEN x.external_db_id = 28 THEN x.xref END) AS pubmed_id,
             MAX(CASE WHEN x.external_db_id = 5 THEN x.xref END) AS hgnc_orthologs,
             MAX(CASE WHEN x.external_db_id = 24 THEN x.xref END) AS bgd_id

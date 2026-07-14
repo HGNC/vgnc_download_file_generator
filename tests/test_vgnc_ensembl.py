@@ -236,3 +236,39 @@ class TestVgncEnsemblGenerateJson:
         full_json = "[" + ",".join(json_objects) + "]"
         parsed = json.loads(full_json)
         assert isinstance(parsed, list)
+
+
+class TestVgncEnsemblUniprotArray:
+    """Ensembl JSON must render uniprot_ids as an array (mirrors VgncPublic)."""
+
+    _UNIPROT = "Uniprot ID(supplied by UniProt)"
+
+    def _generator_with(self, rows: list[dict]) -> VgncEnsembl:
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncEnsembl(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen.stream_rows = lambda chunk_size=5000, batch_size=5000: iter([rows])  # type: ignore[method-assign]  # noqa: ARG005
+        return gen
+
+    def test_json_uniprot_rendered_as_array(self) -> None:
+        gen = self._generator_with([{"VGNC ID": "VGNC:1", self._UNIPROT: "Q9H0A9|P12345"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj[self._UNIPROT] == ["Q9H0A9", "P12345"]
+        assert isinstance(obj[self._UNIPROT], list)
+
+    def test_json_uniprot_single_value_is_array(self) -> None:
+        gen = self._generator_with([{"VGNC ID": "VGNC:1", self._UNIPROT: "Q9H0A9"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj[self._UNIPROT] == ["Q9H0A9"]
+
+    def test_json_uniprot_none_is_null(self) -> None:
+        gen = self._generator_with([{"VGNC ID": "VGNC:1", self._UNIPROT: None}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj[self._UNIPROT] is None
+
+    def test_json_ensembl_gene_id_stays_string(self) -> None:
+        """Ensembl Gene ID is NOT arrayified; it stays a plain string."""
+        gen = self._generator_with([{"VGNC ID": "VGNC:1", "Ensembl Gene ID": "ENSACAG00000001234"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["Ensembl Gene ID"] == "ENSACAG00000001234"
+        assert isinstance(obj["Ensembl Gene ID"], str)
