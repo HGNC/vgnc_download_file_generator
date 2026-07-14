@@ -180,6 +180,12 @@ class GCSStreamWriter:
         Yields:
             File-like object for streaming writes
 
+        Raises:
+            Re-raises any exception from the context body. On such a failure
+            no partial object is left in GCS: the non-compressed path deletes
+            the (possibly partially committed) blob, and the compressed path
+            skips the upload entirely.
+
         Example:
             >>> writer = GCSStreamWriter("my-bucket", "my-project", path_prefix="vgnc/")
             >>> with writer.open_write_stream("data.json", "application/json") as f:
