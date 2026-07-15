@@ -208,6 +208,7 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     - PubMed ID (db_name = ``pubmed``)
     - HGNC Orthologs (db_name = ``hgnc_ortholog``)
     - BGD ID (db_name = ``bgd_gene``)
+    - HORDE ID (db_name = ``horde``)
 
     No ``created_by`` filter is applied. A previous ``WHERE ghx.created_by = 1``
     silently dropped PubMed links (curated under a different editor id), so
@@ -240,7 +241,8 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
                 SEPARATOR '|'
             ) AS pubmed_id,
             MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs,
-            MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id
+            MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id,
+            MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id
         FROM gene_has_xrefs ghx
         JOIN xref x ON ghx.xref_id = x.id
         JOIN database_resource dr ON x.external_db_id = dr.id

@@ -252,17 +252,18 @@ class TestBuildXrefsQuery:
         assert isinstance(query, TextClause)
 
     def test_returns_all_xref_columns(self) -> None:
-        """Test that all 6 xref types are in the query."""
+        """Test that all 7 xref types are in the query."""
         query = build_xrefs_query()
         sql = query.text
 
-        # Should have all 6 xref types
+        # Should have all 7 xref types
         assert "ncbi_gene_id" in sql
         assert "ensembl_gene_id" in sql
         assert "uniprot_ids" in sql
         assert "pubmed_id" in sql
         assert "hgnc_orthologs" in sql
         assert "bgd_id" in sql
+        assert "horde_id" in sql
 
     def test_uses_conditional_aggregation(self) -> None:
         """Test that query uses conditional aggregation pattern."""
@@ -306,6 +307,12 @@ class TestBuildXrefsQuery:
         # Both multi-valued fields (uniprot + pubmed) use GROUP_CONCAT + '|'.
         assert sql.count("GROUP_CONCAT") >= 2
         assert sql.count("SEPARATOR '|'") >= 2
+
+    def test_xrefs_horde_uses_horde_resource_name(self) -> None:
+        """HORDE id maps by stable db_name='horde' (database_resource id=31)."""
+        query = build_xrefs_query()
+        sql = query.text
+        assert "MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id" in sql
 
     def test_xrefs_hgnc_ortholog_uses_hgnc_ortholog_resource_name(self) -> None:
         """HGNC ortholog mapping must use db_name='hgnc_ortholog'."""

@@ -100,6 +100,7 @@ class VgncPublic(BaseFileGenerator):
             "pubmed_id": "pubmed_id",
             "hgnc_orthologs": "hgnc_orthologs",
             "bgd_id": "bgd_id",
+            "horde_id": "horde_id",
             "date_approved_reserved": "date_approved_reserved",
             "date_modified": "date_modified",
             "date_symbol_changed": "date_symbol_changed",
