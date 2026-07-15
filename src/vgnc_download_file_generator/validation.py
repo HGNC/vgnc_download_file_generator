@@ -47,6 +47,21 @@ def _require(pattern: re.Pattern[str], value: Any, label: str) -> Any:
     return text
 
 
+def _require_each(pattern: re.Pattern[str], value: Any, label: str) -> Any:
+    """Like :func:`_require` but for pipe-separated array fields (e.g.
+    ``uniprot_ids``, ``pubmed_id``): each non-empty segment must match
+    ``pattern``. None / empty pass through unchanged."""
+    if value is None:
+        return None
+    text = str(value)
+    if text == "":
+        return ""
+    bad = [part for part in text.split("|") if part and not pattern.match(part)]
+    if bad:
+        raise ValueError(f"invalid {label}: {bad}")
+    return text
+
+
 class VgncIdRecord(BaseModel):
     """Per-record ID format contract.
 
@@ -62,7 +77,7 @@ class VgncIdRecord(BaseModel):
     ncbi_gene_id: str | None = None
     ensembl_gene_id: str | None = None
     uniprot_ids: str | None = None  # pipe-separated UniProt accessions
-    pubmed_id: str | None = None
+    pubmed_id: str | None = None  # pipe-separated PubMed IDs
 
     @field_validator("assigned_id")
     @classmethod
@@ -86,17 +101,12 @@ class VgncIdRecord(BaseModel):
     @field_validator("pubmed_id")
     @classmethod
     def _check_pubmed(cls, v: Any) -> Any:
-        return _require(PUBMED_ID_RE, v, "PubMed ID (expected digits)")
+        return _require_each(PUBMED_ID_RE, v, "PubMed ID(s)")
 
     @field_validator("uniprot_ids")
     @classmethod
     def _check_uniprot(cls, v: Any) -> Any:
-        if v is None or v == "":
-            return v
-        bad = [part for part in str(v).split("|") if part and not UNIPROT_RE.match(part)]
-        if bad:
-            raise ValueError(f"invalid UniProt accession(s): {bad}")
-        return v
+        return _require_each(UNIPROT_RE, v, "UniProt accession(s)")
 
 
 class RecordValidator:

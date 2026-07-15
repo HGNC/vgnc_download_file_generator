@@ -418,3 +418,38 @@ class TestVgncPublicUniprotArray:
         obj = json.loads(next(gen.generate_json_rows()))
         assert obj["ensembl_gene_id"] == "ENSACAG00000001234"
         assert isinstance(obj["ensembl_gene_id"], str)
+
+class TestVgncPublicPubmedArray:
+    """pubmed_id must render as a JSON array (a gene may have several refs)."""
+
+    def _generator_with(self, rows: list[dict]) -> VgncPublic:
+        db = MagicMock(spec=DatabaseConnection)
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen.stream_rows = lambda _chunk_size=5000, _batch_size=5000: iter([rows])  # type: ignore[method-assign]
+        return gen
+
+    def test_json_pubmed_id_rendered_as_array(self) -> None:
+        """A pipe-separated GROUP_CONCAT string becomes a JSON array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "pubmed_id": "40407593|123"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["pubmed_id"] == ["40407593", "123"]
+        assert isinstance(obj["pubmed_id"], list)
+
+    def test_json_pubmed_id_single_value_is_array(self) -> None:
+        """A single PubMed ID is still wrapped in a one-element array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "pubmed_id": "40407593"}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["pubmed_id"] == ["40407593"]
+
+    def test_json_pubmed_id_none_is_null(self) -> None:
+        """No PubMed data (NULL from GROUP_CONCAT) stays JSON null."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "pubmed_id": None}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["pubmed_id"] is None
+
+    def test_json_pubmed_id_empty_string_is_empty_array(self) -> None:
+        """An empty string round-trips to an empty array."""
+        gen = self._generator_with([{"vgnc_id": "VGNC:1", "pubmed_id": ""}])
+        obj = json.loads(next(gen.generate_json_rows()))
+        assert obj["pubmed_id"] == []

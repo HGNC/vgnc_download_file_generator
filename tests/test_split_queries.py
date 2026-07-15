@@ -294,11 +294,18 @@ class TestBuildXrefsQuery:
         assert "SEPARATOR '|'" in sql
         assert "AS uniprot_ids" in sql
 
-    def test_xrefs_pubmed_uses_pubmed_resource_name(self) -> None:
-        """PubMed mapping must use db_name='pubmed'."""
+    def test_xrefs_pubmed_uses_group_concat(self) -> None:
+        """pubmed_id aggregates via GROUP_CONCAT (a gene may have several PubMed
+        refs), not MAX (which keeps only one)."""
         query = build_xrefs_query()
         sql = query.text
-        assert "dr.db_name = 'pubmed' THEN x.xref END) AS pubmed_id" in sql
+        # PubMed must no longer be a single-value MAX aggregation.
+        assert "MAX(CASE WHEN dr.db_name = 'pubmed'" not in sql
+        assert "dr.db_name = 'pubmed'" in sql
+        assert "AS pubmed_id" in sql
+        # Both multi-valued fields (uniprot + pubmed) use GROUP_CONCAT + '|'.
+        assert sql.count("GROUP_CONCAT") >= 2
+        assert sql.count("SEPARATOR '|'") >= 2
 
     def test_xrefs_hgnc_ortholog_uses_hgnc_ortholog_resource_name(self) -> None:
         """HGNC ortholog mapping must use db_name='hgnc_ortholog'."""

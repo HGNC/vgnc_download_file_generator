@@ -79,10 +79,14 @@ class TestVgncIdRecordFormats:
         with pytest.raises(ValidationError):
             self._record(uniprot_ids="12345")
 
-    def test_pubmed_id_numeric(self) -> None:
-        self._record(pubmed_id="12345678")
+    def test_pubmed_id_single_and_multi(self) -> None:
+        """PubMed IDs (digits only), single or pipe-separated (array field)."""
+        self._record(pubmed_id="40407593")
+        self._record(pubmed_id="40407593|123")
         with pytest.raises(ValidationError):
             self._record(pubmed_id="PMID:12345")
+        with pytest.raises(ValidationError):
+            self._record(pubmed_id="40407593|BADID")
 
     def test_extra_fields_ignored(self) -> None:
         """The merged dict carries many non-ID fields; they must be ignored."""

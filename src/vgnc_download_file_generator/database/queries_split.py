@@ -235,7 +235,10 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
                 DISTINCT CASE WHEN dr.db_name = 'uniprot_protein' THEN x.xref END
                 SEPARATOR '|'
             ) AS uniprot_ids,
-            MAX(CASE WHEN dr.db_name = 'pubmed' THEN x.xref END) AS pubmed_id,
+            GROUP_CONCAT(
+                DISTINCT CASE WHEN dr.db_name = 'pubmed' THEN x.xref END
+                SEPARATOR '|'
+            ) AS pubmed_id,
             MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs,
             MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id
         FROM gene_has_xrefs ghx

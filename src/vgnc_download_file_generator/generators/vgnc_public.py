@@ -112,7 +112,7 @@ class VgncPublic(BaseFileGenerator):
 
     def _array_json_fields(self) -> set[str]:
         """Output headers that serialize as JSON arrays."""
-        return {"uniprot_ids"}
+        return {"uniprot_ids", "pubmed_id"}
 
     def get_headers(self, extension: str) -> list[str]:  # noqa: ARG002
         """Get column headers for the file format.

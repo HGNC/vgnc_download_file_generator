@@ -1,6 +1,6 @@
 # Spec: Fix pubmed_id (null + render as array)
 
-> Status: planning
+> Status: Tasks 1-2 implemented + unit tests green (343 passed); pre-deploy DB spot-check pending
 > Branch: `gcp` (follow-up to `fix-vgnc-data-correctness`)
 
 ## Problem
