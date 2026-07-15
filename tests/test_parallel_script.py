@@ -83,10 +83,15 @@ class TestLociConstants:
 
     def test_locus_types(self) -> None:
         """Test that locus types match expected values."""
-        locus_types = ["gene with protein product", "RNA, long non-coding", "RNA, small nucleolar", "pseudogene", "unknown"]
-        assert len(locus_types) == 5
+        locus_types = ["gene with protein product", "RNA, long non-coding", "RNA, small nucleolar", "RNA, Y", "pseudogene", "unknown"]
+        assert len(locus_types) == 6
         assert "gene with protein product" in locus_types
         assert "pseudogene" in locus_types
+
+    def test_entrypoint_contains_rna_y_locus_type(self) -> None:
+        """entrypoint.sh must generate RNA, Y locus-type files."""
+        content = ENTRYPOINT.read_text()
+        assert '"RNA, Y"' in content
 
     def test_locus_groups(self) -> None:
         """Test that locus groups match expected values."""
