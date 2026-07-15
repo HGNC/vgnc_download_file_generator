@@ -1,6 +1,6 @@
 # Spec: Fix VGNC download-file data correctness
 
-> Status: review-fixes-applied + runtime ID validation + partial-file cleanup (pending pre-deploy DB validation)
+> Status: review-fixes-applied + runtime ID validation + partial-file cleanup + Ensembl-default-source pin (pending pre-deploy DB validation)
 > Branch: `fix/vgnc-data-correctness` (off `gcp`)
 
 ## Problem
@@ -37,11 +37,16 @@ JOIN gene_location     ON gene_has_location.location_id = gene_location.id
 JOIN chromosomes       ON gene_location.chr_id = chromosomes.chr_id
 WHERE genefam.assigned_id = 'VGNC:14936'
   AND genefam.taxon_id = assembly.taxon_id
-  AND assembly.is_vgnc_default = 1;
+  AND assembly.is_vgnc_default = 1
+  AND assembly.source = 'Ensembl';
 ```
 
 Key: filter `gene_has_location` down to the row whose assembly is the species'
 default (`assembly.is_vgnc_default = 1` and `assembly.taxon_id = gf.taxon_id`).
+`is_vgnc_default` is NOT unique per species: VGNC:6926 (Pan troglodytes) carries
+two default assemblies -- `NCBI` `Pan_tro_3.0` (chr 14) and `Ensembl`
+`Pan_tro_3.0` (chr 1) -- so the Task 1 fan-out recurred. The canonical default is
+the Ensembl-sourced one, so also require `assembly.source = 'Ensembl'` (Task 7).
 
 ## Scope of change
 
@@ -72,7 +77,7 @@ default (`assembly.is_vgnc_default = 1` and `assembly.taxon_id = gf.taxon_id`).
 ### Task 1 — Location: one row per gene on the default assembly
 - **Change:** restrict `gene_has_location` itself to the default assembly via a
   correlated EXISTS on the `ghl` JOIN condition
-  (`EXISTS (SELECT 1 FROM assembly a WHERE a.id = ghl.assembly_id AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id)`).
+  (`EXISTS (SELECT 1 FROM assembly a WHERE a.id = ghl.assembly_id AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id AND a.source = 'Ensembl')`).
   - **Why EXISTS, not a bare `LEFT JOIN assembly a ...`:** a bare assembly join is
     INERT — no `a.*` column is selected and `gene_location`/`chromosomes` join off
     `ghl` directly, so every `gene_has_location` row still emits one output row
@@ -120,7 +125,9 @@ Three fresh-context reviewers ran. Synthesis:
 - **Note (Reviewer 3):** `assembly` schema is unverified in-repo (no schema file).
   Correctness rests on invariants: (i) exactly one default assembly per species,
   (ii) at most one location per default assembly. **Gated on pre-deploy validation
-  (below).**
+  (below).** Invariant (i) is now known to be VIOLATED in the live DB (VGNC:6926
+  has two default assemblies, NCBI + Ensembl); Task 7 pins `source = 'Ensembl'`
+  to restore a deterministic canonical location without relying on (i).
 - **Note (Reviewer 3):** `GROUP_CONCAT` for uniprot has no `ORDER BY` →
   non-deterministic element order. Accepted (low severity; most genes have 0-1
   UniProt IDs). Adding `ORDER BY` inside `GROUP_CONCAT(DISTINCT CASE ...)` carries
@@ -140,16 +147,24 @@ WHERE TABLE_NAME = 'assembly' AND COLUMN_NAME IN ('id','is_vgnc_default','taxon_
 --     Any row here means the location join can still fan out.
 SELECT taxon_id, COUNT(*) AS n_default FROM assembly
 WHERE is_vgnc_default = 1 GROUP BY taxon_id HAVING COUNT(*) <> 1;
+-- KNOWN VIOLATION (VGNC:6926: a species can have a default NCBI + default Ensembl
+-- assembly). Task 7 pins the canonical default to source = 'Ensembl'. The
+-- per-source gate that actually matters now:
+SELECT taxon_id, COUNT(*) AS n_ensembl_default FROM assembly
+WHERE is_vgnc_default = 1 AND source = 'Ensembl'
+GROUP BY taxon_id HAVING COUNT(*) <> 1;
+-- expect 0 rows; a species with 0 Ensembl defaults would lose ALL locations.
 
 -- (C) ABHD12 / VGNC:14936 must now yield exactly ONE row (was 4).
 SELECT gf.assigned_id, gf.assigned_symbol, c.display_name AS chr, gl.start, gl.end, gl.strand
 FROM genefam gf
 LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
     AND EXISTS (SELECT 1 FROM assembly a WHERE a.id = ghl.assembly_id
-                AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id)
+                AND a.is_vgnc_default = 1 AND a.taxon_id = gf.taxon_id
+                AND a.source = 'Ensembl')
 LEFT JOIN gene_location gl ON ghl.location_id = gl.id
 LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
-WHERE gf.assigned_id = 'VGNC:14936';
+WHERE gf.assigned_id IN ('VGNC:14936', 'VGNC:6926');
 
 -- (D) Confirm external_db_id semantics: 1 = Ensembl, 2 = NCBI/Entrez.
 SELECT x.external_db_id, ed.name, COUNT(*) AS n
@@ -258,3 +273,30 @@ unchanged. `None`/empty -> unchanged.
 leaves `10`/`18`/`X`/`Y`/`MT`/`Un` and `None`/`""` unchanged.
 `tests/test_vgnc_public_stream.py` `_process_batch` -> `"05"` for `chromosome="5"`,
 `"X"` for `"X"`, `None` for a locationless gene.
+
+
+### Task 7 - Location: pin the default assembly to `source = 'Ensembl'`
+
+**Problem (observed in production):** `assembly.is_vgnc_default = 1` is NOT
+unique per species. Confirmed for VGNC:6926 (Pan troglodytes, taxon 9598): two
+default assemblies coexist -- assembly 3 `NCBI` `Pan_tro_3.0` (chr 14) and
+assembly 23 `Ensembl` `Pan_tro_3.0` (chr 1), both `is_vgnc_default = 1`. The
+Task 1 EXISTS matched both, so the gene emitted two location rows; the chr 14
+NCBI row is wrong. This is exactly the fan-out the pre-deploy invariant (B) /
+Reviewer-3 invariant (i) were meant to catch -- invariant (i) is violated in the
+live DB.
+
+**Change:** add `AND a.source = 'Ensembl'` to the `assembly` EXISTS in
+`build_gene_data_query`, so the canonical location is the Ensembl-sourced default
+assembly. (In the observed data the Ensembl default is also `is_current = 1`; the
+chosen discriminator is `source`, per user direction.)
+
+**Verify (RED first):** `test_build_gene_data_query_pins_default_assembly_to_ensembl_source`
+asserts `a.source = 'Ensembl'` is present in the production SQL; the behavioral
+`test_default_assembly_filter_collapses_to_one_row_per_gene` is updated to model
+the two-default-assembly case (NCBI + Ensembl, mirroring the VGNC:6926
+diagnostic) and assert a single chr-1 row.
+
+**Pre-deploy gate:** each species must have exactly one Ensembl default assembly
+-- see the per-source query added under invariant (B). A species with 0 Ensembl
+defaults would lose ALL locations under this filter; investigate before shipping.

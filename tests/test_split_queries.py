@@ -90,17 +90,33 @@ class TestBuildGeneDataQuery:
 
         assert "LEFT JOIN assembly a ON ghl.assembly_id = a.id" not in sql
 
-    def test_default_assembly_filter_collapses_to_one_row_per_gene(self) -> None:
-        """Behavioral proof (in-memory SQLite) that restricting
-        gene_has_location to the species' default assembly yields exactly one
-        row per gene even when the gene has locations on multiple assemblies,
-        while still preserving genes that have no location at all.
+    def test_build_gene_data_query_pins_default_assembly_to_ensembl_source(self) -> None:
+        """The default-assembly EXISTS must pin assembly.source = 'Ensembl'.
 
-        This validates the EXISTS join pattern that
-        ``test_build_gene_data_query_filters_ghl_to_default_assembly`` asserts
-        is present in the production query. (The production query itself is
-        MySQL-specific -- CONCAT/CAST -- so it cannot run on SQLite; this test
-        exercises the load-bearing relational logic in isolation.)
+        is_vgnc_default is NOT unique per species: VGNC:6926 has two default
+        assemblies (NCBI Pan_tro_3.0 + Ensembl Pan_tro_3.0), which produced two
+        location rows (chromosome 14 and 1). The canonical default is the
+        Ensembl-sourced one, so the EXISTS must include a.source = 'Ensembl'.
+        """
+        query = build_gene_data_query(filters={"taxon_id": 9913})
+        sql = query.text
+        assert "a.source = 'Ensembl'" in sql
+
+    def test_default_assembly_filter_collapses_to_one_row_per_gene(self) -> None:
+        """Behavioral proof (in-memory SQLite) that restricting gene_has_location
+        to the species' Ensembl-sourced default assembly yields exactly one
+        canonical row per gene, even when a species has MORE THAN ONE default
+        assembly.
+
+        Mirrors the VGNC:6926 production diagnostic (Pan troglodytes, taxon 9598):
+        a default NCBI Pan_tro_3.0 assembly (chr 14) AND a default Ensembl
+        Pan_tro_3.0 assembly (chr 1), both is_vgnc_default = 1, plus two
+        non-default NCBI assemblies. is_vgnc_default alone is not unique, so the
+        canonical location is the default assembly sourced from 'Ensembl'. A gene
+        with no such location is still preserved (LEFT JOIN, NULL location).
+
+        (The production query is MySQL-specific, so this runs the load-bearing
+        relational logic -- the EXISTS with the source pin -- in isolation.)
         """
         import sqlite3
 
@@ -110,31 +126,33 @@ class TestBuildGeneDataQuery:
             """
             CREATE TABLE genefam (genefam_id INTEGER, taxon_id INTEGER, assigned_id TEXT);
             CREATE TABLE gene_has_location (gene_id INTEGER, location_id INTEGER, assembly_id INTEGER);
-            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER);
+            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER, source TEXT);
             CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER);
             CREATE TABLE chromosomes (chr_id INTEGER, display_name TEXT, taxon_id INTEGER);
             """
         )
-        # Gene 1 (VGNC:14936 analog): 4 locations on 4 assemblies; only assembly 1 is default.
-        cur.execute("INSERT INTO genefam VALUES (1, 9913, 'VGNC:14936')")
+        # Gene 1 (VGNC:6926): two DEFAULT assemblies (NCBI + Ensembl) + two
+        # non-default NCBI ones. The Ensembl default (assembly 23, chr 1) wins.
+        cur.execute("INSERT INTO genefam VALUES (1, 9598, 'VGNC:6926')")
         cur.executemany(
-            "INSERT INTO assembly VALUES (?, ?, ?)",
-            [(1, 9913, 1), (2, 9913, 0), (3, 9913, 0), (4, 9913, 0)],
+            "INSERT INTO assembly VALUES (?, ?, ?, ?)",
+            [(3, 9598, 1, "NCBI"), (23, 9598, 1, "Ensembl"), (27, 9598, 0, "NCBI"), (104, 9598, 0, "NCBI")],
         )
         cur.executemany(
             "INSERT INTO gene_has_location VALUES (?, ?, ?)",
-            [(1, 101, 1), (1, 102, 2), (1, 103, 3), (1, 104, 4)],
+            [(1, 412433, 3), (1, 486777, 23), (1, 584093, 27), (1, 1546350, 104)],
         )
         cur.executemany(
             "INSERT INTO gene_location VALUES (?, ?, ?, ?)",
-            [(101, 7, 1000, 2000), (102, 8, 3000, 4000), (103, 9, 5000, 6000), (104, 10, 7000, 8000)],
+            [(412433, 14, 21176277, 21566347), (486777, 1, 136605058, 136605999),
+             (584093, 14, 18212875, 18594504), (1546350, 14, 28669951, 29052657)],
         )
         cur.executemany(
             "INSERT INTO chromosomes VALUES (?, ?, ?)",
-            [(7, "1", 9913), (8, "1", 9913), (9, "1", 9913), (10, "1", 9913)],
+            [(14, "14", 9598), (1, "1", 9598)],
         )
         # Gene 2: no location at all.
-        cur.execute("INSERT INTO genefam VALUES (2, 9913, 'VGNC:99999')")
+        cur.execute("INSERT INTO genefam VALUES (2, 9598, 'VGNC:99999')")
 
         rows = cur.execute(
             """
@@ -144,7 +162,8 @@ class TestBuildGeneDataQuery:
                 AND EXISTS (SELECT 1 FROM assembly a
                             WHERE a.id = ghl.assembly_id
                               AND a.is_vgnc_default = 1
-                              AND a.taxon_id = gf.taxon_id)
+                              AND a.taxon_id = gf.taxon_id
+                              AND a.source = 'Ensembl')
             LEFT JOIN gene_location gl ON ghl.location_id = gl.id
             LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
             """
@@ -155,9 +174,10 @@ class TestBuildGeneDataQuery:
         for gid, _aid, chr_, start in rows:
             by_gene.setdefault(gid, []).append((chr_, start))
 
-        # Multi-assembly gene collapses to exactly one row (the default assembly).
+        # Gene collapses to exactly one row: the Ensembl default (chr 1).
         assert len(by_gene[1]) == 1, f"gene 1 should have 1 row, got {len(by_gene[1])}"
-        assert by_gene[1][0][1] == 1000  # default assembly's start
+        assert by_gene[1][0][0] == "1", "must be the Ensembl default's chromosome"
+        assert by_gene[1][0][1] == 136605058  # Ensembl default's start
         # Locationless gene is still emitted (LEFT JOIN preserved), with NULL location.
         assert len(by_gene[2]) == 1, "locationless gene must be preserved"
         assert by_gene[2][0][0] is None

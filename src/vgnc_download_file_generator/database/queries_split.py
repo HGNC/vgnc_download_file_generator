@@ -25,9 +25,12 @@ def build_gene_data_query(
     - Locus type and group (locus_type, locus_group)
     - Genomic location (gene_has_location, assembly, gene_location, chromosomes).
       The gene_has_location join is restricted to the species' default VGNC
-      assembly via a correlated EXISTS (assembly.is_vgnc_default = 1 and matching
-      taxon_id) so each gene emits exactly one canonical location instead of one
-      row per assembly.
+      assembly via a correlated EXISTS (assembly.is_vgnc_default = 1, matching
+      taxon_id, and assembly.source = 'Ensembl') so each gene emits exactly one
+      canonical location. is_vgnc_default is NOT unique per species (a species
+      can carry a default NCBI + a default Ensembl assembly -- see VGNC:6926),
+      so the Ensembl source pin selects the canonical default instead of one
+      row per default assembly.
     - Gene family (gene_has_family, family_new)
 
     Xrefs, aliases, and dates are fetched in separate queries.
@@ -77,6 +80,7 @@ def build_gene_data_query(
                 WHERE a.id = ghl.assembly_id
                     AND a.is_vgnc_default = 1
                     AND a.taxon_id = gf.taxon_id
+                    AND a.source = 'Ensembl'
             )
         LEFT JOIN gene_location gl ON ghl.location_id = gl.id
         LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
