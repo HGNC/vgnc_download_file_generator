@@ -1,6 +1,6 @@
 # Spec: Fix VGNC download-file data correctness
 
-> Status: review-fixes-applied + runtime ID validation + partial-file cleanup + Ensembl-default-source pin (pending pre-deploy DB validation)
+> Status: review-fixes-applied + runtime ID validation + partial-file cleanup + Ensembl-default-source pin (Task 7 pre-deploy gate PASSED against live DB; Tasks 1-6 pre-deploy still pending DB validation)
 > Branch: `fix/vgnc-data-correctness` (off `gcp`)
 
 ## Problem
@@ -300,3 +300,7 @@ diagnostic) and assert a single chr-1 row.
 **Pre-deploy gate:** each species must have exactly one Ensembl default assembly
 -- see the per-source query added under invariant (B). A species with 0 Ensembl
 defaults would lose ALL locations under this filter; investigate before shipping.
+
+**RESULT: PASSED (validated against the live DB post-fix).** The per-species
+Ensembl-default gate returned 0 rows (every species has exactly one Ensembl
+default), and the VGNC:6926 / VGNC:14936 spot-check each collapse to one row.
