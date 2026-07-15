@@ -235,7 +235,7 @@ class TestVgncPublicGenerateJson:
         assert isinstance(result, Generator)
 
     def test_special_case_columns_included(self) -> None:
-        """Test that special case columns (taxon_id, bgd_id, primary_db_id) are included."""
+        """Test that special case columns (taxon_id, bgd_id) are included."""
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9913, display_name="Zebrafish", is_live="Y")
 

@@ -148,8 +148,8 @@ class TestVgncPublicGetHeaders:
 
         headers = generator.get_headers("txt")
 
-        # Should have 26 headers (24 standard + taxon_id + primary_db_id)
-        assert len(headers) == 26
+        # Should have 25 headers (24 standard + taxon_id)
+        assert len(headers) == 25
 
         # taxon_id should be first
         assert headers[0] == "taxon_id"
@@ -157,8 +157,8 @@ class TestVgncPublicGetHeaders:
         # Check that vgnc_id is now second
         assert headers[1] == "vgnc_id"
 
-    def test_all_species_adds_primary_db_id_last(self) -> None:
-        """Test that 'All' species adds primary_db_id as last column."""
+    def test_all_species_does_not_include_primary_db_id(self) -> None:
+        """primary_db_id must not be shipped in TSV or JSON for any species."""
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id="All", display_name="All", is_live="Y")  # type: ignore[arg-type]
 
@@ -171,9 +171,9 @@ class TestVgncPublicGetHeaders:
         )
 
         headers = generator.get_headers("txt")
-
-        # primary_db_id should be last
-        assert headers[-1] == "primary_db_id"
+        assert "primary_db_id" not in headers
+        # Last header is the final standard column, not primary_db_id.
+        assert headers[-1] == "hgnc_orthologs"
 
     def test_zebrafish_adds_bgd_id_before_pubmed_id(self) -> None:
         """Test that Zebrafish (taxon 9913) adds bgd_id before pubmed_id."""
@@ -236,8 +236,8 @@ class TestVgncPublicGetHeaders:
         headers = generator.get_headers("txt")
 
         # Should detect both 'All' species and Zebrafish
-        # 24 standard + taxon_id + primary_db_id + bgd_id = 27
-        assert len(headers) == 27
+        # 24 standard + taxon_id + bgd_id = 26
+        assert len(headers) == 26
 
         # taxon_id should be first
         assert headers[0] == "taxon_id"
@@ -246,8 +246,8 @@ class TestVgncPublicGetHeaders:
         pubmed_idx = headers.index("pubmed_id")
         assert headers[pubmed_idx - 1] == "bgd_id"
 
-        # primary_db_id should be last
-        assert headers[-1] == "primary_db_id"
+        # Last header is the final standard column, not primary_db_id.
+        assert headers[-1] == "hgnc_orthologs"
 
 
 class TestFormatLocationSortable:

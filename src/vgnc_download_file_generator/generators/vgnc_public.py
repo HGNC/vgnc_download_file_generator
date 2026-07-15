@@ -119,7 +119,7 @@ class VgncPublic(BaseFileGenerator):
         """Get column headers for the file format.
 
         Returns standard 22 headers with special cases:
-        - 'All' species: adds taxon_id first and primary_db_id last
+        - 'All' species: adds taxon_id first
         - Cattle/Bos taurus (taxon 9913): adds bgd_id before pubmed_id
 
         Args:
@@ -130,11 +130,10 @@ class VgncPublic(BaseFileGenerator):
         """
         headers = self._STANDARD_HEADERS.copy()
 
-        # Handle 'All' species - add taxon_id first and primary_db_id last
+        # Handle 'All' species - add taxon_id first
         is_all_species = self.species.taxon_id == "All" or self.species.display_name == "All"  # type: ignore[comparison-overlap]
         if is_all_species:
             headers.insert(0, "taxon_id")
-            headers.append("primary_db_id")
 
         # Handle Cattle/Bos taurus (taxon 9913) - add bgd_id before pubmed_id
         is_cattle = self.species.taxon_id == 9913
