@@ -209,6 +209,12 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     - HGNC Orthologs (db_name = ``hgnc_ortholog``)
     - BGD ID (db_name = ``bgd_gene``)
 
+    No ``created_by`` filter is applied. A previous ``WHERE ghx.created_by = 1``
+    silently dropped PubMed links (curated under a different editor id), so
+    ``pubmed_id`` shipped as NULL for every gene. The ``MAX`` / ``GROUP_CONCAT
+    DISTINCT`` aggregations already collapse duplicate links, so the editor
+    filter is unnecessary as well as harmful.
+
     Args:
         genefam_ids: List of genefam_ids to filter (from main query results)
 
@@ -235,11 +241,10 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
         FROM gene_has_xrefs ghx
         JOIN xref x ON ghx.xref_id = x.id
         JOIN database_resource dr ON x.external_db_id = dr.id
-        WHERE ghx.created_by = 1
     """
 
     if genefam_ids:
-        sql += "          AND ghx.genefam_id IN :genefam_ids"
+        sql += "          WHERE ghx.genefam_id IN :genefam_ids"
 
     sql += """
         GROUP BY ghx.genefam_id

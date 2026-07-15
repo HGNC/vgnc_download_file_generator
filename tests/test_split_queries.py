@@ -311,6 +311,23 @@ class TestBuildXrefsQuery:
         query = build_xrefs_query()
         sql = query.text
         assert "JOIN database_resource dr ON x.external_db_id = dr.id" in sql
+        assert "created_by" not in sql, (
+            "created_by=1 is a stale legacy filter that silently drops PubMed "
+            "xrefs (created by a different editor). Aggregations dedupe links."
+        )
+
+    def test_xrefs_no_where_when_no_genefam_ids(self) -> None:
+        """With no genefam_ids filter there must be no WHERE clause at all."""
+        sql = build_xrefs_query().text
+        # No genefam_ids -> nothing to filter on; FROM/JOIN/GROUP BY only.
+        assert "WHERE" not in sql
+
+    def test_xrefs_where_is_only_genefam_id_filter(self) -> None:
+        """With genefam_ids the only predicate is `genefam_id IN (...)`."""
+        sql = build_xrefs_query(genefam_ids=[1, 2, 3]).text
+        assert sql.count("WHERE") == 1
+        assert "ghx.genefam_id IN" in sql
+        assert "created_by" not in sql
     def test_groups_by_genefam_id(self) -> None:
         """Test that query groups by genefam_id."""
         query = build_xrefs_query()
