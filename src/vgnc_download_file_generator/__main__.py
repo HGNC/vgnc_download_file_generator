@@ -29,10 +29,6 @@ console = Console()
     help="Species taxon ID (e.g., 9913 for cow) or 'All' for all species",
 )
 @click.option(
-    "--chromosome",
-    help="Chromosome identifier (e.g., 'X', '1', 'Un'). Required for chromosome-specific files.",
-)
-@click.option(
     "--locus-type",
     help="Locus type filter (e.g., 'gene with protein product')",
 )
@@ -99,7 +95,6 @@ console = Console()
 )
 def main(
     species: str,
-    chromosome: str | None,
     locus_type: str | None,
     locus_group: str | None,
     file_type: str,
@@ -118,8 +113,8 @@ def main(
 
     Examples:
 
-        # Generate TSV and JSON for cow chromosome X
-        vgnc-download-file-generator --species 9913 --chromosome X --formats tsv,json
+        # Generate TSV and JSON for cow
+        vgnc-download-file-generator --species 9913 --formats tsv,json
 
         # Generate all species files
         vgnc-download-file-generator --species All --formats tsv,json
@@ -159,8 +154,6 @@ def main(
             console.print("[bold]Files that would be generated:[/bold]")
             console.print(f"  File Type: {file_type}")
             console.print(f"  Species: {display_name}")
-            if chromosome:
-                console.print(f"  Chromosome: {chromosome}")
             if locus_type:
                 console.print(f"  Locus Type: {locus_type}")
             if locus_group:
@@ -275,7 +268,6 @@ def main(
         generator = generator_class(
             db=db,
             species=species_info,
-            chromosome=chromosome,
             locus_group=locus_group,
             locus_type=locus_type,
         )
@@ -284,8 +276,6 @@ def main(
         console.print("[bold]Generation Plan:[/bold]")
         console.print(f"  File Type: {file_type}")
         console.print(f"  Species: {display_name}")
-        if chromosome:
-            console.print(f"  Chromosome: {chromosome}")
         if locus_type:
             console.print(f"  Locus Type: {locus_type}")
         if locus_group:

@@ -18,7 +18,6 @@ class TestVgncPublicGenerateFilename:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -36,7 +35,6 @@ class TestVgncPublicGenerateFilename:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -54,7 +52,6 @@ class TestVgncPublicGenerateFilename:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -66,24 +63,23 @@ class TestVgncPublicGenerateFilename:
         # Should not contain 'ensembl' at all
         assert "ensembl" not in filename.lower()
 
-    def test_individual_species_chromosome_generates_correct_path(self) -> None:
-        """Test that individual species with chromosome generates correct path."""
+    def test_individual_species_all_genes_generates_correct_path(self) -> None:
+        """Test that individual species all-genes file path is correct."""
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9913, display_name="cattle", is_live="Y")
 
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
 
         filename = generator.generate_filename("txt")
 
-        # Should generate species-specific chromosome path
+        # Should generate species-specific all-genes path
         assert "tsv/cattle/" in filename
-        assert "chr_X.txt" in filename
+        assert "_All.txt" in filename
 
 
 class TestVgncPublicGetHeaders:
@@ -97,7 +93,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
@@ -141,7 +136,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -165,7 +159,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -183,7 +176,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -207,7 +199,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -228,7 +219,6 @@ class TestVgncPublicGetHeaders:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )

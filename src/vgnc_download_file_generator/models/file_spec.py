@@ -61,7 +61,6 @@ class FileSpec:
         species_name: Display name of the species (e.g., "Bolivian squirrel monkey")
         locus_group: Optional locus group filter (e.g., "protein-coding gene")
         locus_type: Optional locus type filter (e.g., "gene with protein product")
-        chromosome: Optional chromosome filter (e.g., "X", "1", "Un")
         file_type: Type of file (vgnc_public, vgnc_ensembl, or vgnc_withdrawn)
         extension: File extension (txt or json)
     """
@@ -70,7 +69,6 @@ class FileSpec:
     species_name: str
     locus_group: str | None
     locus_type: str | None
-    chromosome: str | None
     file_type: Literal["vgnc_public", "vgnc_ensembl", "vgnc_withdrawn"]
     extension: Literal["txt", "json"]
 
@@ -85,29 +83,27 @@ class FileSpec:
             GCS path string for the file
 
         Examples:
-            >>> # Chromosome-specific JSON file
+            >>> # Species all-genes JSON file
             >>> FileSpec(
             ...     species_id=9593,
             ...     species_name="Bolivian squirrel monkey",
             ...     locus_group=None,
             ...     locus_type=None,
-            ...     chromosome="X",
             ...     file_type="vgnc_public",
             ...     extension="json",
             ... ).gcs_path()
-            'json/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.json'
+            'json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.json'
 
-            >>> # Chromosome-specific TSV file
+            >>> # Species all-genes TSV file
             >>> FileSpec(
             ...     species_id=9593,
             ...     species_name="Bolivian squirrel monkey",
             ...     locus_group=None,
             ...     locus_type=None,
-            ...     chromosome="X",
             ...     file_type="vgnc_public",
             ...     extension="txt",
             ... ).gcs_path()
-            'tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.txt'
+            'tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.txt'
 
             >>> # Ensembl mapping file
             >>> FileSpec(
@@ -115,7 +111,6 @@ class FileSpec:
             ...     species_name="All",
             ...     locus_group=None,
             ...     locus_type=None,
-            ...     chromosome=None,
             ...     file_type="vgnc_ensembl",
             ...     extension="txt",
             ... ).gcs_path()
@@ -127,11 +122,10 @@ class FileSpec:
             ...     species_name="cow",
             ...     locus_group=None,
             ...     locus_type="gene with protein product",
-            ...     chromosome=None,
             ...     file_type="vgnc_public",
             ...     extension="json",
             ... ).gcs_path()
-            'json/cow/locus_types/cow_gene_with_protein_product_All.json'
+            'json/cattle/locus_types/cattle_gene_with_protein_product_All.json'
         """
         # Special case for Ensembl mapping file (all species)
         if self.file_type == "vgnc_ensembl" and self.species_id == "All":
@@ -157,65 +151,28 @@ class FileSpec:
         if self.locus_type is not None:
             # Convert spaces to underscores for clean URLs
             locus_type_normalized = self.locus_type.replace(",", "").replace(" ", "_").lower()
-            if self.chromosome is not None:
-                # Locus type + chromosome
-                if is_all_species:
-                    # All species with locus type and chromosome: all/locus_types/
-                    filename = f"all_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
-                    return f"{subdir}/all/locus_types/{filename}"
-                else:
-                    filename = f"{species_dir}_{locus_type_normalized}_chr_{self.chromosome}.{self.extension}"
-                    return f"{subdir}/{species_dir}/locus_types/{filename}"
-            else:
-                # Locus type all chromosomes
-                if is_all_species:
-                    # All species with locus type: all/locus_types/all_{locus_type}_All.{ext}
-                    filename = f"all_{locus_type_normalized}_All.{self.extension}"
-                    return f"{subdir}/all/locus_types/{filename}"
-                else:
-                    filename = f"{species_dir}_{locus_type_normalized}_All.{self.extension}"
-                    return f"{subdir}/{species_dir}/locus_types/{filename}"
+            if is_all_species:
+                filename = f"all_{locus_type_normalized}_All.{self.extension}"
+                return f"{subdir}/all/locus_types/{filename}"
+            filename = f"{species_dir}_{locus_type_normalized}_All.{self.extension}"
+            return f"{subdir}/{species_dir}/locus_types/{filename}"
 
         # Check locus_group next
         if self.locus_group is not None:
             # Convert spaces to underscores, remove commas, preserve hyphens, lowercase
             locus_group_normalized = self.locus_group.replace(",", "").replace(" ", "_").lower()
-            if self.chromosome is not None:
-                # Locus group + chromosome
-                if is_all_species:
-                    # All species with locus group and chromosome: all/locus_groups/
-                    filename = f"all_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
-                    return f"{subdir}/all/locus_groups/{filename}"
-                else:
-                    filename = f"{species_dir}_{locus_group_normalized}_chr_{self.chromosome}.{self.extension}"
-                    return f"{subdir}/{species_dir}/locus_groups/{filename}"
-            else:
-                # Locus group all chromosomes
-                if is_all_species:
-                    # All species with locus group: all/locus_groups/all_{locus_group}_All.{ext}
-                    filename = f"all_{locus_group_normalized}_All.{self.extension}"
-                    return f"{subdir}/all/locus_groups/{filename}"
-                else:
-                    filename = f"{species_dir}_{locus_group_normalized}_All.{self.extension}"
-                    return f"{subdir}/{species_dir}/locus_groups/{filename}"
-
-        # Chromosome-only (no locus filter)
-        if self.chromosome is not None:
             if is_all_species:
-                # All species with chromosome: {subdir}/all/all_vgnc_gene_set_chr{chromosome}.{ext}
-                filename = f"all_vgnc_gene_set_chr{self.chromosome}.{self.extension}"
-                return f"{subdir}/all/{filename}"
-            else:
-                # Individual species with chromosome: {subdir}/{species}/{species}_vgnc_gene_set_chr_{chromosome}.{ext}
-                filename = f"{normalized_name}_vgnc_gene_set_chr_{self.chromosome}.{self.extension}"
-                return f"{subdir}/{species_dir}/{filename}"
+                filename = f"all_{locus_group_normalized}_All.{self.extension}"
+                return f"{subdir}/all/locus_groups/{filename}"
+            filename = f"{species_dir}_{locus_group_normalized}_All.{self.extension}"
+            return f"{subdir}/{species_dir}/locus_groups/{filename}"
 
-        # Default: all chromosomes file (no chromosome, no locus filter)
+        # Default: all-genes file (no chromosome split)
         if is_all_species:
             # For All species with no filters, produce: all/all_vgnc_gene_set_All.{ext}
             filename = f"all_vgnc_gene_set_All.{self.extension}"
             return f"{subdir}/all/{filename}"
         else:
-            # Individual species all chromosomes: {subdir}/{species}/{species}_vgnc_gene_set_All.{ext}
+            # Individual species all-genes file
             filename = f"{normalized_name}_vgnc_gene_set_All.{self.extension}"
             return f"{subdir}/{species_dir}/{filename}"

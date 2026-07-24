@@ -36,7 +36,6 @@ def build_gene_data_query(
     Args:
         filters: Dictionary of filter criteria. Keys can be:
             - taxon_id: Filter by species taxonomy ID
-            - chromosome: Filter by chromosome name (e.g., "X", "1")
             - locus_type: Filter by locus type
             - locus_group: Filter by locus group
             - status_id: Filter by gene status_id (int or list for IN clause)
@@ -124,31 +123,6 @@ def build_gene_data_query(
             where_clauses.append(f"gf.taxon_id = :{param_name}")
             bind_params[param_name] = filters["taxon_id"]  # type: ignore[assignment]
             param_counter += 1
-
-        # Filter by chromosome
-        if "chromosome" in filters:
-            chromosome_value = filters["chromosome"]
-            # Special case: "Un" should match:
-            # 1. Chromosomes with display_name starting with "Un" (e.g., Un0001, Un_1)
-            # 2. Non-chromosome coord_systems (scaffolds, primary_assembly, etc.)
-            # 3. Genes with NO location data (c.chr_id IS NULL)
-            if chromosome_value == "Un":
-                # Build OR condition for Un chromosome grouping
-                # (c.chr_id IS NULL OR c.display_name LIKE 'Un%' OR c.coord_system NOT LIKE '%chromosome%')
-                param_name_like = f"chromosome_like_{param_counter}"
-                param_name_coord = f"chromosome_coord_{param_counter}"
-                where_clauses.append(
-                    f"(c.chr_id IS NULL OR c.display_name LIKE :{param_name_like} "
-                    f"OR c.coord_system NOT LIKE :{param_name_coord})"
-                )
-                bind_params[param_name_like] = f"{chromosome_value}%"
-                bind_params[param_name_coord] = "%chromosome%"
-                param_counter += 2
-            else:
-                param_name = f"chromosome_{param_counter}"
-                where_clauses.append(f"c.display_name = :{param_name}")
-                bind_params[param_name] = chromosome_value  # type: ignore[assignment]
-                param_counter += 1
 
         # Filter by locus_type
         if "locus_type" in filters:

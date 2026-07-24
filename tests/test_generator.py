@@ -29,7 +29,6 @@ class TestBaseFileGeneratorAbstract:
         generator = ConcreteGenerator(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
@@ -71,14 +70,12 @@ class TestBaseFileGeneratorAbstract:
         generator = ConcreteGenerator(
             db=db,
             species=species,
-            chromosome="X",
             locus_group="protein-coding gene",
             locus_type="gene with protein product",
         )
 
         assert generator.db == db
         assert generator.species == species
-        assert generator.chromosome == "X"
         assert generator.locus_group == "protein-coding gene"
         assert generator.locus_type == "gene with protein product"
 
@@ -102,7 +99,6 @@ class TestGenerateFilenameMethod:
         generator = ConcreteGenerator(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
@@ -112,7 +108,7 @@ class TestGenerateFilenameMethod:
         # Should match FileSpec logic for GCS path
         assert "json/" in filename
         assert "bolivian_squirrel_monkey" in filename
-        assert "chr_X.json" in filename
+        assert "_All.json" in filename
         assert "_vgnc_gene_set_" in filename
 
     def test_generates_txt_filename(self) -> None:
@@ -131,7 +127,6 @@ class TestGenerateFilenameMethod:
         generator = ConcreteGenerator(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type="gene with protein product",
         )
@@ -164,7 +159,6 @@ class TestGenerateFilenameMethod:
         generator = ConcreteGenerator(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )

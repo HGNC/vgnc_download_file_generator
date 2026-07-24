@@ -369,16 +369,16 @@ class GCSStreamWriter:
         The path prefix is applied to both source and destination paths.
 
         Args:
-            source_path: The source file path (e.g., "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt")
+            source_path: The source file path (e.g., "tsv/cattle/cattle_vgnc_gene_set_All.txt")
             legacy_species: The legacy species name to replace in the path (e.g., "cow")
 
         Example:
             >>> writer = GCSStreamWriter("my-bucket", "my-project", path_prefix="vgnc/")
             >>> writer.create_backward_compatibility_copy(
-            ...     "tsv/cattle/cattle_vgnc_gene_set_chr_X.txt",
+            ...     "tsv/cattle/cattle_vgnc_gene_set_All.txt",
             ...     "cow"
             ... )
-            # Creates copy at: vgnc/tsv/cow/cow_vgnc_gene_set_chr_X.txt
+            # Creates copy at: vgnc/tsv/cow/cow_vgnc_gene_set_All.txt
         """
         # Apply path prefix to source
         full_source_path = self._apply_path_prefix(source_path)

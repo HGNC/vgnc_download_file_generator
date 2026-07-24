@@ -16,51 +16,25 @@ IFS=',' read -ra FORMAT_ARRAY <<< "${FORMATS}"
 LOCUS_TYPES=("gene with protein product" "RNA, long non-coding" "RNA, small nucleolar" "RNA, Y" "pseudogene" "unknown")
 LOCUS_GROUPS=("protein-coding gene" "non-coding RNA" "pseudogene" "other")
 
-discover_chromosomes() {
-    local species_id="$1"
-    local chromosomes
-    chromosomes=$(${DB_HELPER} chromosomes "${species_id}" 2>/dev/null) || chromosomes=""
-    echo "${chromosomes}"
-}
-
 generate_species_files() {
     local species_id="$1"
-    local chromosomes
 
     echo "[INFO] Generating files for species ${species_id}"
-
-    chromosomes=$(discover_chromosomes "${species_id}")
-
-    if [[ -z "${chromosomes}" ]]; then
-        echo "[INFO] No chromosomes found for species ${species_id}"
-    fi
+    echo "[INFO] Chromosome-split files are disabled by policy"
 
     local job_file
     job_file=$(mktemp)
     trap "rm -f ${job_file}" EXIT
     local job_count=0
 
-    # All-chromosomes combined files
+    # Species all-genes files (no chromosome split)
     for format in "${FORMAT_ARRAY[@]}"; do
         format=$(echo "${format}" | xargs)
         echo "--species \"${species_id}\" --formats \"${format}\"" >> "${job_file}"
         job_count=$((job_count + 1))
     done
 
-    # Per-chromosome files
-    if [[ -n "${chromosomes}" ]]; then
-        IFS=',' read -ra chr_array <<< "${chromosomes}"
-        for chr in "${chr_array[@]}"; do
-            chr=$(echo "${chr}" | xargs)
-            for format in "${FORMAT_ARRAY[@]}"; do
-                format=$(echo "${format}" | xargs)
-                echo "--species \"${species_id}\" --chromosome \"${chr}\" --formats \"${format}\"" >> "${job_file}"
-                job_count=$((job_count + 1))
-            done
-        done
-    fi
-
-    # Per-locus-type files
+    # Per-locus-type files (all-genes set)
     for locus_type in "${LOCUS_TYPES[@]}"; do
         for format in "${FORMAT_ARRAY[@]}"; do
             format=$(echo "${format}" | xargs)
@@ -69,7 +43,7 @@ generate_species_files() {
         done
     done
 
-    # Per-locus-group files
+    # Per-locus-group files (all-genes set)
     for locus_group in "${LOCUS_GROUPS[@]}"; do
         for format in "${FORMAT_ARRAY[@]}"; do
             format=$(echo "${format}" | xargs)
@@ -77,36 +51,6 @@ generate_species_files() {
             job_count=$((job_count + 1))
         done
     done
-
-    # Per-locus-type + chromosome files
-    if [[ -n "${chromosomes}" ]]; then
-        IFS=',' read -ra chr_array <<< "${chromosomes}"
-        for chr in "${chr_array[@]}"; do
-            chr=$(echo "${chr}" | xargs)
-            for locus_type in "${LOCUS_TYPES[@]}"; do
-                for format in "${FORMAT_ARRAY[@]}"; do
-                    format=$(echo "${format}" | xargs)
-                    echo "--species \"${species_id}\" --locus-type \"${locus_type}\" --chromosome \"${chr}\" --formats \"${format}\"" >> "${job_file}"
-                    job_count=$((job_count + 1))
-                done
-            done
-        done
-    fi
-
-    # Per-locus-group + chromosome files
-    if [[ -n "${chromosomes}" ]]; then
-        IFS=',' read -ra chr_array <<< "${chromosomes}"
-        for chr in "${chr_array[@]}"; do
-            chr=$(echo "${chr}" | xargs)
-            for locus_group in "${LOCUS_GROUPS[@]}"; do
-                for format in "${FORMAT_ARRAY[@]}"; do
-                    format=$(echo "${format}" | xargs)
-                    echo "--species \"${species_id}\" --locus-group \"${locus_group}\" --chromosome \"${chr}\" --formats \"${format}\"" >> "${job_file}"
-                    job_count=$((job_count + 1))
-                done
-            done
-        done
-    fi
 
     echo "[INFO] Total jobs for species ${species_id}: ${job_count}"
 

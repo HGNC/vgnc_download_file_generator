@@ -7,8 +7,7 @@ Airflow.
 ## Features
 
 - Multiple file generators: VGNC Public, Ensembl mapping, Withdrawn entries
-- Per-species chromosome, locus type, and locus group files
-- "Un" chromosome handling for scaffolds, contigs, and unlocated genes
+- Per-species all-genes, locus type, and locus group files
 - Dual output formats: TSV and JSON
 - Streaming architecture with server-side cursors for memory efficiency
 - Direct streaming uploads to GCS
@@ -58,31 +57,35 @@ uv run pytest
 
 ```bash
 # Generate files for a specific species
-uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --formats tsv,json
+uv run python -m vgnc_download_file_generator --species 9913 --formats tsv,json
 
 # Generate all species files
 uv run python -m vgnc_download_file_generator --species All --formats tsv,json
 
 # Dry run
-uv run python -m vgnc_download_file_generator --species 9913 --chromosome X --dry-run
+uv run python -m vgnc_download_file_generator --species 9913 --dry-run
 ```
 
 ### Docker (Cloud Run)
 
 The container entrypoint (`entrypoint.sh`) dispatches on `VGNC_MODE`:
 
+> Chromosome-split publication policy: the automated entrypoint no longer
+> schedules chromosome-split files. Publication includes species-level
+> all-genes and locus-filtered files only.
+
 - **`all` mode** — generates cross-species combined files (public, Ensembl,
   withdrawn) and cross-species per-locus-type and per-locus-group files.
 - **`all-species` mode** — generates all cross-species files (same as `all`),
   then discovers all species from the database and generates per-species
   files. Used by the `scripts/run_all_species.sh` helper.
-- **`species` mode** — discovers chromosomes via `db_query_helper.py` and
-  generates all per-species files (chromosomes, locus types, locus groups)
-  using GNU parallel for concurrent CLI invocations.
+- **`species` mode** — generates per-species all-genes, per-locus-type,
+  and per-locus-group files (no chromosome-split files) using GNU parallel
+  for concurrent CLI invocations.
 
 The image is based on `python:3.13-slim` with `default-mysql-client`,
 `default-libmysqlclient-dev`, `build-essential`, `pkg-config`, and
-`parallel` (GNU parallel for concurrent per-chromosome file generation).
+`parallel` (GNU parallel for concurrent file generation).
 The Dockerfile copies `pyproject.toml`, `uv.lock`, and `README.md` before
 running `uv sync --frozen --no-dev` for reproducible production builds. It
 also copies `db_query_helper.py` and `entrypoint.sh`:
@@ -126,7 +129,6 @@ src/vgnc_download_file_generator/
 ├── json/
 │   ├── all/
 │   │   ├── all_vgnc_gene_set_All.json
-│   │   ├── all_vgnc_gene_set_chr{chromosome}.json
 │   │   ├── all_vgnc_withdrawn.json
 │   │   ├── locus_types/
 │   │   │   └── all_{locus_type}_All.json
@@ -134,7 +136,6 @@ src/vgnc_download_file_generator/
 │   │       └── all_{locus_group}_All.json
 │   └── {species}/
 │       ├── {species}_vgnc_gene_set_All.json
-│       ├── {species}_vgnc_gene_set_chr_{chromosome}.json
 │       ├── locus_types/
 │       │   └── {species}_{locus_type}_All.json
 │       └── locus_groups/
@@ -142,7 +143,6 @@ src/vgnc_download_file_generator/
 ├── tsv/
 │   ├── all/
 │   │   ├── all_vgnc_gene_set_All.tsv
-│   │   ├── all_vgnc_gene_set_chr{chromosome}.tsv
 │   │   ├── all_vgnc_withdrawn.tsv
 │   │   ├── locus_types/
 │   │   │   └── all_{locus_type}_All.tsv
@@ -150,7 +150,6 @@ src/vgnc_download_file_generator/
 │   │       └── all_{locus_group}_All.tsv
 │   └── {species}/
 │       ├── {species}_vgnc_gene_set_All.tsv
-│       ├── {species}_vgnc_gene_set_chr_{chromosome}.tsv
 │       ├── locus_types/
 │       │   └── {species}_{locus_type}_All.tsv
 │       └── locus_groups/

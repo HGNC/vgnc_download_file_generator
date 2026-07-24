@@ -25,7 +25,6 @@ class BaseFileGenerator(ABC):
     Attributes:
         db: Database connection manager
         species: Species information for the file being generated
-        chromosome: Optional chromosome filter
         locus_group: Optional locus group filter
         locus_type: Optional locus type filter
         _FILE_TYPE: The file type identifier for this generator (overridden by subclasses)
@@ -38,7 +37,6 @@ class BaseFileGenerator(ABC):
         self,
         db: DatabaseConnection,
         species: SpeciesInfo,
-        chromosome: str | None = None,
         locus_group: str | None = None,
         locus_type: str | None = None,
     ) -> None:
@@ -47,13 +45,11 @@ class BaseFileGenerator(ABC):
         Args:
             db: Database connection manager
             species: Species information for this file
-            chromosome: Optional chromosome filter (e.g., "X", "1", "Un")
             locus_group: Optional locus group filter
             locus_type: Optional locus type filter
         """
         self.db = db
         self.species = species
-        self.chromosome = chromosome
         self.locus_group = locus_group
         self.locus_type = locus_type
 
@@ -90,7 +86,7 @@ class BaseFileGenerator(ABC):
         """Generate the GCS path for this file specification.
 
         Uses FileSpec to construct the appropriate path based on the
-        generator's filter criteria (chromosome, locus_type, locus_group).
+        generator's filter criteria (locus_type, locus_group).
 
         Args:
             extension: File extension (e.g., "txt", "json")
@@ -99,13 +95,13 @@ class BaseFileGenerator(ABC):
             GCS storage path for the file
 
         Examples:
-            >>> # Chromosome-specific file
+            >>> # Species all-genes file
             >>> generator.generate_filename("json")
-            'json/bolivian_squirrel_monkey/bolivian_squirrel_monkeyvgnc_gene_set_chrX.json'
+            'json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.json'
 
             >>> # Locus type-specific file
             >>> generator.generate_filename("json")
-            'json/cow/locus_types/cow_gene_with_protein_product_All.json'
+            'json/cattle/locus_types/cattle_gene_with_protein_product_All.json'
 
             >>> # Ensembl mapping file (all species)
             >>> generator.generate_filename("txt")
@@ -120,13 +116,11 @@ class BaseFileGenerator(ABC):
             species_name=self.species.display_name,
             locus_group=self.locus_group,
             locus_type=self.locus_type,
-            chromosome=self.chromosome,
             file_type=file_type,  # type: ignore[arg-type]
             extension=extension,  # type: ignore[arg-type]
         )
 
         return spec.gcs_path()
-
 
     def _array_json_fields(self) -> set[str]:
         """Return the set of output header names that serialize as JSON arrays.

@@ -100,8 +100,6 @@ class VgncWithdrawn(BaseFileGenerator):
         if isinstance(self.species.taxon_id, int):
             filters["taxon_id"] = self.species.taxon_id
 
-        if self.chromosome is not None:
-            filters["chromosome"] = self.chromosome
 
         if self.locus_group is not None:
             filters["locus_group"] = self.locus_group

@@ -23,7 +23,6 @@ class TestVgncPublicStreamRows:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
@@ -50,7 +49,6 @@ class TestVgncPublicStreamRows:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -73,15 +71,14 @@ class TestVgncPublicStreamRows:
         # Query should have taxon_id filter
         assert "9593" in str(query) or "taxon_id" in str(query).lower()
 
-    def test_applies_chromosome_filter_when_present(self) -> None:
-        """Test that chromosome filter is applied when present."""
+    def test_query_includes_chromosome_location_fields(self) -> None:
+        """Test that the query still selects chromosome/location context."""
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
 
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome="X",
             locus_group=None,
             locus_type=None,
         )
@@ -98,11 +95,11 @@ class TestVgncPublicStreamRows:
 
         # Verify cursor.execute was called
         mock_cursor.execute.assert_called_once()
-        # The query should filter by chromosome X
+        # The query should still include chromosome context in SELECT/JOINs
         call_args = mock_cursor.execute.call_args
         query = call_args[0][0]
-        # Query should have chromosome filter
-        assert "X" in str(query) or "chromosome" in str(query).lower()
+        # Query should reference chromosome columns/tables
+        assert "chromosome" in str(query).lower()
 
     def test_yields_chunks_of_correct_size(self) -> None:
         """Test that stream_rows yields chunks of the specified size."""
@@ -112,7 +109,6 @@ class TestVgncPublicStreamRows:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -170,7 +166,6 @@ class TestVgncPublicStreamRows:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -207,7 +202,6 @@ class TestVgncPublicStreamRows:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -252,7 +246,7 @@ class TestVgncPublicRuntimeValidation:
 
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen = VgncPublic(db=db, species=species)
         gen._validator = RecordValidator(mode=mode, grace=grace)  # type: ignore[attr-defined]
         return gen
 
@@ -319,7 +313,7 @@ class TestVgncPublicLocationSortable:
 
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen = VgncPublic(db=db, species=species)
         gen._validator = RecordValidator(mode="strict", grace=50)  # type: ignore[attr-defined]
         return gen
 

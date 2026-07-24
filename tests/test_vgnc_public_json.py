@@ -19,7 +19,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -58,7 +57,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -94,7 +92,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -139,7 +136,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -178,7 +174,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -220,7 +215,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -242,7 +236,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -286,7 +279,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -308,7 +300,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -347,7 +338,6 @@ class TestVgncPublicGenerateJson:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -382,7 +372,7 @@ class TestVgncPublicUniprotArray:
     def _generator_with(self, rows: list[dict]) -> VgncPublic:
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen = VgncPublic(db=db, species=species)
         gen.stream_rows = lambda _chunk_size=5000, _batch_size=5000: iter([rows])  # type: ignore[method-assign]
         return gen
 
@@ -425,7 +415,7 @@ class TestVgncPublicPubmedArray:
     def _generator_with(self, rows: list[dict]) -> VgncPublic:
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-        gen = VgncPublic(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen = VgncPublic(db=db, species=species)
         gen.stream_rows = lambda _chunk_size=5000, _batch_size=5000: iter([rows])  # type: ignore[method-assign]
         return gen
 
