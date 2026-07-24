@@ -178,13 +178,15 @@ class TestBuildGeneDataQuery:
         assert len(gene10_rows) == 1
         assert gene10_rows[0][8] == "4"  # chromosome
 
-    def test_chromosome_filter(self) -> None:
-        """Test chromosome filter is applied correctly."""
+    def test_chromosome_filter_is_ignored(self) -> None:
+        """Chromosome splitting is retired; chromosome filter input is ignored."""
         query = build_gene_data_query(filters={"chromosome": "X"})
         sql = query.text
 
-        assert "c.display_name" in sql
-        assert ":chromosome" in sql
+        # Query still joins chromosomes for location output, but no WHERE bind
+        # should be emitted for chromosome-based filtering.
+        assert "LEFT JOIN chromosomes c" in sql
+        assert ":chromosome" not in sql
 
     def test_build_gene_data_query_filters_ghl_by_default_assembly_chr_membership(self) -> None:
         """The location filter must live on the ghl JOIN (not as inert joins).
@@ -314,20 +316,13 @@ class TestBuildGeneDataQuery:
         assert len(by_gene['VGNC:99999']) == 1
         assert by_gene['VGNC:99999'][0][0] is None
 
-    def test_chromosome_filter_un_uses_like(self) -> None:
-        """Test that 'Un' chromosome uses LIKE for prefix matching.
-
-        The 'Un' chromosome should match all chromosomes starting with 'Un'
-        (e.g., Un0001, Un_1, Un_random) using LIKE pattern matching.
-        """
+    def test_chromosome_filter_un_is_ignored(self) -> None:
+        """Legacy 'Un' chromosome selector is also ignored."""
         query = build_gene_data_query(filters={"chromosome": "Un"})
         sql = query.text
 
-        # Should use LIKE for prefix matching
-        assert "LIKE" in sql
-        assert "c.display_name" in sql
-        # The parameter should be 'Un%' for prefix matching
-        assert ":chromosome" in sql
+        assert ":chromosome" not in sql
+        assert "LIKE" not in sql
 
     def test_locus_type_filter(self) -> None:
         """Test locus_type filter is applied correctly."""

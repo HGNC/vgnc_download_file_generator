@@ -36,14 +36,12 @@ class TestFileSpecDataclass:
             species_name="bolivian_squirrel_monkey",
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="json",
         )
 
         assert spec.species_id == 9593
         assert spec.species_name == "bolivian_squirrel_monkey"
-        assert spec.chromosome == "X"
         assert spec.file_type == "vgnc_public"
         assert spec.extension == "json"
 
@@ -54,7 +52,6 @@ class TestFileSpecDataclass:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_ensembl",
             extension="txt",
         )
@@ -69,14 +66,12 @@ class TestFileSpecDataclass:
             species_name="bolivian_squirrel_monkey",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
 
         assert spec.locus_group is None
         assert spec.locus_type is None
-        assert spec.chromosome is None
 
     def test_repr_contains_all_fields(self) -> None:
         """Test that repr() contains all field values."""
@@ -85,7 +80,6 @@ class TestFileSpecDataclass:
             species_name="bolivian_squirrel_monkey",
             locus_group="protein-coding gene",
             locus_type="gene with protein product",
-            chromosome="X",
             file_type="vgnc_public",
             extension="json",
         )
@@ -104,7 +98,6 @@ class TestFileSpecDataclass:
                 species_name="test",
                 locus_group=None,
                 locus_type=None,
-                chromosome=None,
                 file_type=file_type,  # type: ignore[arg-type]
                 extension="json",
             )
@@ -118,7 +111,6 @@ class TestFileSpecDataclass:
                 species_name="test",
                 locus_group=None,
                 locus_type=None,
-                chromosome=None,
                 file_type="vgnc_public",
                 extension=extension,  # type: ignore[arg-type]
             )
@@ -128,42 +120,40 @@ class TestFileSpecDataclass:
 class TestGcsPathMethod:
     """Tests for FileSpec.gcs_path() method."""
 
-    def test_chromosome_json_path(self) -> None:
-        """Test GCS path for chromosome-specific JSON file."""
+    def test_species_all_genes_json_path(self) -> None:
+        """Test GCS path for species all-genes JSON file."""
         spec = FileSpec(
             species_id=9593,
             species_name="bolivian_squirrel_monkey",
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="json",
         )
 
         path = spec.gcs_path()
-        # Expected format: json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_chr_X.json
+        # Expected format: json/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.json
         assert "json/" in path
         assert "bolivian_squirrel_monkey/" in path
-        assert "chr_X.json" in path
+        assert "_All.json" in path
         assert "_vgnc_gene_set_" in path
 
-    def test_chromosome_tsv_path(self) -> None:
-        """Test GCS path for chromosome-specific TSV file."""
+    def test_species_all_genes_tsv_path(self) -> None:
+        """Test GCS path for species all-genes TSV file."""
         spec = FileSpec(
             species_id=9593,
             species_name="bolivian_squirrel_monkey",
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="txt",
         )
 
         path = spec.gcs_path()
-        # Expected format: tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_chr_X.txt
+        # Expected format: tsv/bolivian_squirrel_monkey/bolivian_squirrel_monkey_vgnc_gene_set_All.txt
         assert "tsv/" in path
         assert "bolivian_squirrel_monkey/" in path
-        assert "chr_X.txt" in path
+        assert "_All.txt" in path
         assert "_vgnc_gene_set_" in path
 
     def test_all_species_ensembl_path(self) -> None:
@@ -173,7 +163,6 @@ class TestGcsPathMethod:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_ensembl",
             extension="txt",
         )
@@ -189,7 +178,6 @@ class TestGcsPathMethod:
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -209,7 +197,6 @@ class TestGcsPathMethod:
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -229,7 +216,6 @@ class TestGcsPathMethod:
             species_name="Bolivian squirrel monkey",  # spaces
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="json",
         )
@@ -247,7 +233,6 @@ class TestGcsPathMethod:
             species_name="Mark's goat",  # apostrophe
             locus_group=None,
             locus_type=None,
-            chromosome="1",
             file_type="vgnc_public",
             extension="json",
         )
@@ -255,16 +240,15 @@ class TestGcsPathMethod:
         path = spec.gcs_path()
         # Apostrophes should be preserved (or handled consistently)
         assert "mark" in path.lower()
-        assert "chr_1.json" in path
+        assert "_All.json" in path
 
-    def test_prd_example_bolivian_squirrel_monkey(self) -> None:
-        """Test PRD example: bolivian_squirrel_monkey_vgnc_gene_set_chr_Un.json."""
+    def test_example_bolivian_squirrel_monkey_all_genes(self) -> None:
+        """Test all-genes filename for bolivian_squirrel_monkey JSON."""
         spec = FileSpec(
             species_id=9593,
             species_name="Bolivian squirrel monkey",
             locus_group=None,
             locus_type=None,
-            chromosome="Un",
             file_type="vgnc_public",
             extension="json",
         )
@@ -272,16 +256,15 @@ class TestGcsPathMethod:
         path = spec.gcs_path()
         # Should match PRD example format
         assert "bolivian_squirrel_monkey" in path
-        assert "chr_Un.json" in path
+        assert "_All.json" in path
 
-    def test_prd_example_cow_gene_with_protein_product(self) -> None:
-        """Test PRD example: cow_gene_with_protein_product_chr_1.json."""
+    def test_example_cow_gene_with_protein_product_all_genes(self) -> None:
+        """Test all-genes locus-type filename for cow JSON."""
         spec = FileSpec(
             species_id=9466,
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome="1",
             file_type="vgnc_public",
             extension="json",
         )
@@ -289,7 +272,7 @@ class TestGcsPathMethod:
         path = spec.gcs_path()
         # Should match PRD example format
         assert "cattle/" in path
-        assert "chr_1.json" in path
+        assert "_All.json" in path
 
     def test_locus_group_path(self) -> None:
         """Test GCS path for locus_group-specific file."""
@@ -298,7 +281,6 @@ class TestGcsPathMethod:
             species_name="cow",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -317,7 +299,6 @@ class TestGcsPathMethod:
             species_name="cow",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -329,81 +310,77 @@ class TestGcsPathMethod:
         assert "cattle/" in path
         assert "protein-coding_gene_All.txt" in path
 
-    def test_locus_type_with_chromosome_json_path(self) -> None:
-        """Test GCS path for locus_type-specific JSON file with chromosome filter."""
+    def test_locus_type_json_path_uses_all_suffix(self) -> None:
+        """Locus-type JSON files always use the _All suffix."""
         spec = FileSpec(
             species_id=9593,
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome="1",
             file_type="vgnc_public",
             extension="json",
         )
 
         path = spec.gcs_path()
-        # Expected: json/cow/locus_types/cow_gene_with_protein_product_chr_1.json
+        # Expected: json/cattle/locus_types/cattle_gene_with_protein_product_All.json
         assert "json/" in path
         assert "cattle/" in path
         assert "locus_types/" in path
-        assert "chr_1.json" in path
+        assert "_All.json" in path
 
-    def test_locus_type_with_chromosome_tsv_path(self) -> None:
-        """Test GCS path for locus_type-specific TSV file with chromosome filter."""
+    def test_locus_type_tsv_path_uses_all_suffix(self) -> None:
+        """Locus-type TSV files always use the _All suffix."""
         spec = FileSpec(
             species_id=9593,
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome="X",
             file_type="vgnc_public",
             extension="txt",
         )
 
         path = spec.gcs_path()
-        # Expected: tsv/cow/locus_types/cow_gene_with_protein_product_chr_X.txt
+        # Expected: tsv/cattle/locus_types/cattle_gene_with_protein_product_All.txt
         assert "tsv/" in path
         assert "cattle/" in path
         assert "locus_types/" in path
-        assert "chr_X.txt" in path
+        assert "_All.txt" in path
 
-    def test_locus_group_with_chromosome_json_path(self) -> None:
-        """Test GCS path for locus_group-specific JSON file with chromosome filter."""
+    def test_locus_group_json_path_uses_all_suffix(self) -> None:
+        """Locus-group JSON files always use the _All suffix."""
         spec = FileSpec(
             species_id=9593,
             species_name="cow",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome="1",
             file_type="vgnc_public",
             extension="json",
         )
 
         path = spec.gcs_path()
-        # Expected: json/cow/locus_groups/cow_protein_coding_gene_chr_1.json
+        # Expected: json/cattle/locus_groups/cattle_protein-coding_gene_All.json
         assert "json/" in path
         assert "cattle/" in path
         assert "locus_groups/" in path
-        assert "chr_1.json" in path
+        assert "_All.json" in path
 
-    def test_locus_group_with_chromosome_tsv_path(self) -> None:
-        """Test GCS path for locus_group-specific TSV file with chromosome filter."""
+    def test_locus_group_tsv_path_uses_all_suffix(self) -> None:
+        """Locus-group TSV files always use the _All suffix."""
         spec = FileSpec(
             species_id=9593,
             species_name="cow",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="txt",
         )
 
         path = spec.gcs_path()
-        # Expected: tsv/cow/locus_groups/cow_protein_coding_gene_chr_X.txt
+        # Expected: tsv/cattle/locus_groups/cattle_protein-coding_gene_All.txt
         assert "tsv/" in path
         assert "cattle/" in path
         assert "locus_groups/" in path
-        assert "chr_X.txt" in path
+        assert "_All.txt" in path
 
 
 class TestSpeciesNameNormalization:
@@ -435,7 +412,6 @@ class TestSpeciesNameNormalization:
             species_name="cow",
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="txt",
         )
@@ -444,7 +420,7 @@ class TestSpeciesNameNormalization:
         # Should use cattle in path, not cow
         assert "cattle/" in path
         assert "cow/" not in path
-        assert "cattle_vgnc_gene_set_chr_X.txt" in path
+        assert "cattle_vgnc_gene_set_All.txt" in path
 
     def test_cow_locus_type_uses_cattle_in_path(self) -> None:
         """Test that cow species with locus type uses cattle in path."""
@@ -453,7 +429,6 @@ class TestSpeciesNameNormalization:
             species_name="cow",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -475,7 +450,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -491,7 +465,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -507,7 +480,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -523,7 +495,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -532,21 +503,20 @@ class TestAllSpeciesDirectory:
         # Also support: json/all/all_vgnc_gene_set_All.json (in all/ directory)
         # This is an alternative path for the same data
 
-    def test_all_species_with_chromosome(self) -> None:
-        """Test GCS path for all species filtered by chromosome."""
+    def test_all_species_all_genes_filename(self) -> None:
+        """Test GCS path for all-species all-genes file."""
         spec = FileSpec(
             species_id="All",
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="txt",
         )
 
         path = spec.gcs_path()
-        # Expected: tsv/all/all_vgnc_gene_set_chrX.txt
-        assert path == "tsv/all/all_vgnc_gene_set_chrX.txt"
+        # Expected: tsv/all/all_vgnc_gene_set_All.txt
+        assert path == "tsv/all/all_vgnc_gene_set_All.txt"
 
     def test_all_species_with_locus_type(self) -> None:
         """Test GCS path for all species filtered by locus type."""
@@ -555,7 +525,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -571,7 +540,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -587,7 +555,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -596,37 +563,35 @@ class TestAllSpeciesDirectory:
         # All species with locus group: all/locus_groups/all_{locus_group}_All.txt
         assert path == "tsv/all/locus_groups/all_protein-coding_gene_All.txt"
 
-    def test_all_species_with_locus_type_and_chromosome(self) -> None:
-        """Test GCS path for all species with locus type and chromosome."""
+    def test_all_species_locus_type_uses_all_suffix(self) -> None:
+        """All-species locus-type files always use the _All suffix."""
         spec = FileSpec(
             species_id="All",
             species_name="All",
             locus_group=None,
             locus_type="gene with protein product",
-            chromosome="1",
             file_type="vgnc_public",
             extension="txt",
         )
 
         path = spec.gcs_path()
-        # Expected: tsv/all/locus_types/all_gene_with_protein_product_chr_1.txt
-        assert path == "tsv/all/locus_types/all_gene_with_protein_product_chr_1.txt"
+        # Expected: tsv/all/locus_types/all_gene_with_protein_product_All.txt
+        assert path == "tsv/all/locus_types/all_gene_with_protein_product_All.txt"
 
-    def test_all_species_with_locus_group_and_chromosome(self) -> None:
-        """Test GCS path for all species with locus group and chromosome."""
+    def test_all_species_locus_group_uses_all_suffix(self) -> None:
+        """All-species locus-group files always use the _All suffix."""
         spec = FileSpec(
             species_id="All",
             species_name="All",
             locus_group="protein-coding gene",
             locus_type=None,
-            chromosome="X",
             file_type="vgnc_public",
             extension="json",
         )
 
         path = spec.gcs_path()
-        # Expected: json/all/locus_groups/all_protein-coding_gene_chr_X.json
-        assert path == "json/all/locus_groups/all_protein-coding_gene_chr_X.json"
+        # Expected: json/all/locus_groups/all_protein-coding_gene_All.json
+        assert path == "json/all/locus_groups/all_protein-coding_gene_All.json"
 
     def test_all_species_vgnc_withdrawn(self) -> None:
         """Test GCS path for all species withdrawn entries."""
@@ -635,7 +600,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_withdrawn",
             extension="txt",
         )
@@ -651,7 +615,6 @@ class TestAllSpeciesDirectory:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_ensembl",
             extension="txt",
         )
@@ -661,17 +624,16 @@ class TestAllSpeciesDirectory:
         assert path == "ensembl/VGNC_to_Ensembl_mapping.txt"
 
 
-class TestIndividualSpeciesAllChromosomes:
-    """Tests for individual species files containing all chromosomes."""
+class TestIndividualSpeciesAllGenes:
+    """Tests for individual species all-genes files."""
 
-    def test_individual_species_all_chromosomes_tsv(self) -> None:
-        """Test GCS path for individual species with all chromosomes."""
+    def test_individual_species_all_genes_tsv(self) -> None:
+        """Test GCS path for individual species all-genes TSV."""
         spec = FileSpec(
             species_id=9913,
             species_name="cattle",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -680,14 +642,13 @@ class TestIndividualSpeciesAllChromosomes:
         # Expected: tsv/cattle/cattle_vgnc_gene_set_All.txt
         assert path == "tsv/cattle/cattle_vgnc_gene_set_All.txt"
 
-    def test_individual_species_all_chromosomes_json(self) -> None:
-        """Test GCS path for individual species JSON with all chromosomes."""
+    def test_individual_species_all_genes_json(self) -> None:
+        """Test GCS path for individual species all-genes JSON."""
         spec = FileSpec(
             species_id=9913,
             species_name="cattle",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -696,14 +657,13 @@ class TestIndividualSpeciesAllChromosomes:
         # Expected: json/cattle/cattle_vgnc_gene_set_All.json
         assert path == "json/cattle/cattle_vgnc_gene_set_All.json"
 
-    def test_cow_normalizes_to_cattle_all_chromosomes(self) -> None:
+    def test_cow_normalizes_to_cattle_all_genes(self) -> None:
         """Test that cow species normalizes to cattle in All filename."""
         spec = FileSpec(
             species_id=9913,
             species_name="cow",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )
@@ -712,14 +672,13 @@ class TestIndividualSpeciesAllChromosomes:
         # Should use cattle in path
         assert path == "tsv/cattle/cattle_vgnc_gene_set_All.txt"
 
-    def test_multi_word_species_all_chromosomes(self) -> None:
-        """Test GCS path for multi-word species with all chromosomes."""
+    def test_multi_word_species_all_genes(self) -> None:
+        """Test GCS path for multi-word species all-genes JSON."""
         spec = FileSpec(
             species_id=9593,
             species_name="Bolivian squirrel monkey",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )

@@ -54,12 +54,12 @@ class TestCLIArgumentParsing:
         assert result.exit_code == 1
         assert "Invalid species ID" in result.output
 
-    def test_accepts_chromosome_option(self) -> None:
-        """Test that --chromosome option is accepted."""
+    def test_rejects_chromosome_option(self) -> None:
+        """Chromosome split is retired: --chromosome is no longer accepted."""
         runner = CliRunner()
         result = runner.invoke(main, ["--species", "9913", "--chromosome", "X", "--dry-run"])
-        assert result.exit_code == 0
-        assert "Chromosome: X" in result.output
+        assert result.exit_code != 0
+        assert "No such option: --chromosome" in result.output
 
     def test_accepts_locus_type_option(self) -> None:
         """Test that --locus-type option is accepted."""
@@ -143,7 +143,7 @@ class TestCLIDryRunMode:
     def test_dry_run_displays_generation_plan(self) -> None:
         """Test that dry-run shows what would be generated."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--species", "9913", "--chromosome", "X", "--dry-run"])
+        result = runner.invoke(main, ["--species", "9913", "--dry-run"])
         assert result.exit_code == 0
         assert "DRY RUN MODE" in result.output
         assert "Files that would be generated:" in result.output
@@ -187,7 +187,7 @@ class TestCLIConfiguration:
             runner = CliRunner()
             runner.invoke(
                 main,
-                ["--species", "9913", "--chromosome", "X"],
+                ["--species", "9913"],
                 env={"GCS_PROJECT_ID": "test-project", "GCS_BUCKET": "test-bucket"},
                 catch_exceptions=True,
             )
@@ -334,7 +334,6 @@ class TestCLIForcedCompression:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="tsv",  # CLI passes "tsv" format
         )
@@ -356,7 +355,6 @@ class TestCLIForcedCompression:
             species_name="All",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="json",
         )
@@ -370,25 +368,22 @@ class TestCLIForcedCompression:
         assert is_all_directory_file is True
 
     def test_other_all_species_files_not_forced_compression(self) -> None:
-        """Test that other All species files in all/ subdirs are compressed (they also have /all/)."""
+        """All-species locus files still live under /all/ and remain compressed."""
         from vgnc_download_file_generator.models.file_spec import FileSpec
 
-        # All species with chromosome filter (still in all/ directory)
         spec = FileSpec(
             species_id="All",
             species_name="All",
             locus_group=None,
-            locus_type=None,
-            chromosome="X",
+            locus_type="gene with protein product",
             file_type="vgnc_public",
             extension="txt",
         )
 
         filename = spec.gcs_path()
-        # This filename should trigger forced compression (contains /all/)
         is_all_directory_file = "/all/" in filename
         assert is_all_directory_file is True
-        assert filename == "tsv/all/all_vgnc_gene_set_chrX.txt"
+        assert filename == "tsv/all/locus_types/all_gene_with_protein_product_All.txt"
 
     def test_individual_species_files_not_forced_compression(self) -> None:
         """Test that individual species files are not forced compressed."""
@@ -399,7 +394,6 @@ class TestCLIForcedCompression:
             species_name="cattle",
             locus_group=None,
             locus_type=None,
-            chromosome=None,
             file_type="vgnc_public",
             extension="txt",
         )

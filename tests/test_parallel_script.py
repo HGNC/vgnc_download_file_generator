@@ -60,6 +60,16 @@ class TestJobListGeneration:
         assert format_list[0] == "tsv"
 
 
+
+
+class TestChromosomeFilePolicy:
+    """Policy tests: do not offer chromosome-split download files."""
+
+    def test_entrypoint_does_not_schedule_chromosome_jobs(self) -> None:
+        """entrypoint should not queue any --chromosome jobs."""
+        content = ENTRYPOINT.read_text()
+        assert "--chromosome" not in content
+
 class TestCPUCoreDetection:
     """Tests for CPU core auto-detection logic."""
 
@@ -108,13 +118,12 @@ class TestChromosomeDiscovery:
         """Test that db_query_helper.py exists."""
         assert DB_HELPER.exists(), f"db_query_helper.py not found at {DB_HELPER}"
 
-    def test_db_query_helper_has_correct_join_chain(self) -> None:
-        """Test that the chromosome query uses the correct JOIN chain."""
+    def test_db_query_helper_only_supports_species_discovery(self) -> None:
+        """Chromosome discovery is retired from the helper script."""
         content = DB_HELPER.read_text()
-        assert "gene_has_location" in content, "Missing gene_has_location junction table"
-        assert "gene_location" in content, "Missing gene_location table"
-        assert "chromosomes" in content, "Missing chromosomes table"
-        assert "coord_system" in content, "Missing coord_system filter"
+        assert "def get_all_species" in content
+        assert "def get_chromosomes_for_species" not in content
+        assert "Valid commands: species" in content
 
 
 class TestJobCountCalculation:
@@ -147,9 +156,9 @@ class TestModeDispatch:
         file_types = ["vgnc_public", "vgnc_ensembl", "vgnc_withdrawn"]
         assert len(file_types) == 3
 
-    def test_species_mode_uses_db_helper(self) -> None:
-        """Test that species mode references db_query_helper for chromosome discovery."""
+    def test_modes_reference_db_helper_for_species_discovery(self) -> None:
+        """entrypoint should keep db helper wiring for all-species discovery."""
         if ENTRYPOINT.exists():
             content = ENTRYPOINT.read_text()
             assert "db_query_helper" in content, "entrypoint.sh should reference db_query_helper.py"
-            assert "discover_chromosomes" in content, "entrypoint.sh should have discover_chromosomes function"
+            assert "discover_all_species" in content, "entrypoint.sh should discover species IDs"

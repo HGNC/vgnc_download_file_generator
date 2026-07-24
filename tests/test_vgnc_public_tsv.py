@@ -18,7 +18,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -49,7 +48,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -81,7 +79,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -123,7 +120,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -159,7 +155,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -181,7 +176,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -212,7 +206,6 @@ class TestVgncPublicGenerateTsv:
         generator = VgncPublic(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -256,7 +249,8 @@ class TestVgncPublicTsvUniprotPipe:
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
         generator = VgncPublic(
-            db=db, species=species, chromosome=None, locus_group=None, locus_type=None
+            db=db,
+            species=species,
         )
         generator.stream_rows = lambda chunk_size=5000, batch_size=5000: iter(  # type: ignore[method-assign]  # noqa: ARG005
             [[{"vgnc_id": "VGNC:1", "uniprot_ids": "Q9H0A9|P12345"}]]
@@ -274,7 +268,8 @@ class TestVgncPublicTsvUniprotPipe:
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
         generator = VgncPublic(
-            db=db, species=species, chromosome=None, locus_group=None, locus_type=None
+            db=db,
+            species=species,
         )
         generator.stream_rows = lambda chunk_size=5000, batch_size=5000: iter(  # type: ignore[method-assign]  # noqa: ARG005
             [[{"vgnc_id": "VGNC:1", "uniprot_ids": None}]]

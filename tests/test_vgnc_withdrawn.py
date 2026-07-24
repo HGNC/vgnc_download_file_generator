@@ -19,7 +19,6 @@ class TestVgncWithdrawnGetHeaders:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -38,7 +37,6 @@ class TestVgncWithdrawnGetHeaders:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -58,7 +56,6 @@ class TestVgncWithdrawnGetHeaders:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -80,7 +77,6 @@ class TestVgncWithdrawnStreamRows:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -110,7 +106,6 @@ class TestVgncWithdrawnStreamRows:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -143,7 +138,6 @@ class TestVgncWithdrawnGenerateTsv:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -174,7 +168,6 @@ class TestVgncWithdrawnGenerateTsv:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -210,7 +203,6 @@ class TestVgncWithdrawnGenerateJson:
         generator = VgncWithdrawn(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )

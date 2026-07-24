@@ -19,7 +19,6 @@ class TestVgncEnsemblGetHeaders:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -52,7 +51,6 @@ class TestVgncEnsemblGetHeaders:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -77,7 +75,6 @@ class TestVgncEnsemblStreamRows:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -106,7 +103,6 @@ class TestVgncEnsemblStreamRows:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -139,7 +135,6 @@ class TestVgncEnsemblGenerateTsv:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -170,7 +165,6 @@ class TestVgncEnsemblGenerateTsv:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -206,7 +200,6 @@ class TestVgncEnsemblGenerateJson:
         generator = VgncEnsembl(
             db=db,
             species=species,
-            chromosome=None,
             locus_group=None,
             locus_type=None,
         )
@@ -246,7 +239,7 @@ class TestVgncEnsemblUniprotArray:
     def _generator_with(self, rows: list[dict]) -> VgncEnsembl:
         db = MagicMock(spec=DatabaseConnection)
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-        gen = VgncEnsembl(db=db, species=species, chromosome=None, locus_group=None, locus_type=None)
+        gen = VgncEnsembl(db=db, species=species)
         gen.stream_rows = lambda chunk_size=5000, batch_size=5000: iter([rows])  # type: ignore[method-assign]  # noqa: ARG005
         return gen
 
