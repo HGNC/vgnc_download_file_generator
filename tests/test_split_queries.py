@@ -53,6 +53,131 @@ class TestBuildGeneDataQuery:
         # Should also filter chromosomes by same taxon_id to prevent cross-species contamination
         assert "c.taxon_id = gf.taxon_id" in sql
 
+    def test_species_all_chromosome_query_keeps_locationless_genes(self) -> None:
+        """Species-scoped all-chromosome output must keep locationless genes.
+
+        Regression guard for genes that exist in all_vgnc_gene_set_All but were
+        missing from species *_vgnc_gene_set_All files. Species filtering should
+        constrain gene rows (gf.taxon_id) without turning the LEFT JOIN to
+        chromosomes into an effective INNER JOIN.
+        """
+        import sqlite3
+
+        query = build_gene_data_query(filters={"taxon_id": 9598})
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE genefam (
+                genefam_id INTEGER,
+                taxon_id INTEGER,
+                assigned_id TEXT,
+                assigned_symbol TEXT,
+                assigned_name TEXT,
+                status_id INTEGER
+            );
+            CREATE TABLE gene_has_locus_type (genefam_id INTEGER, locus_type_id INTEGER);
+            CREATE TABLE locus_type (id INTEGER, type TEXT, locus_group_id INTEGER);
+            CREATE TABLE locus_group (id INTEGER, name TEXT);
+            CREATE TABLE gene_has_location (gene_id INTEGER, location_id INTEGER, assembly_id INTEGER);
+            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER, source TEXT, is_current INTEGER);
+            CREATE TABLE assembly_has_chr (assembly_id INTEGER, chr_id INTEGER);
+            CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER, strand TEXT, band TEXT);
+            CREATE TABLE chromosomes (chr_id INTEGER, taxon_id INTEGER, display_name TEXT, coord_system TEXT);
+            CREATE TABLE gene_status (id INTEGER, status TEXT);
+            CREATE TABLE gene_has_family (genefam_id INTEGER, family_id INTEGER);
+            CREATE TABLE family_new (id INTEGER, name TEXT);
+            """
+        )
+
+        # Two genes in taxon 9598: one located, one locationless.
+        cur.executemany(
+            "INSERT INTO genefam VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (1, 9598, "VGNC:1", "GENE1", "Gene 1", 6),
+                (2, 9598, "VGNC:2", "GENE2", "Gene 2", 6),
+                (3, 9606, "VGNC:3", "GENE3", "Gene 3", 6),
+            ],
+        )
+        cur.execute("INSERT INTO assembly VALUES (23, 9598, 1, 'Ensembl', 1)")
+        cur.execute("INSERT INTO assembly_has_chr VALUES (23, 1)")
+        cur.execute("INSERT INTO gene_has_location VALUES (1, 101, 23)")
+        cur.execute("INSERT INTO gene_location VALUES (101, 1, 100, 200, '+', 'q1')")
+        cur.execute("INSERT INTO chromosomes VALUES (1, 9598, '1', 'chromosome')")
+
+        rows = cur.execute(query.text, {"taxon_id_0": 9598}).fetchall()
+        conn.close()
+
+        returned_ids = sorted({row[2] for row in rows})
+        assert returned_ids == ["VGNC:1", "VGNC:2"]
+
+    def test_species_all_chromosome_uses_default_assembly_chr_link_fallback(self) -> None:
+        """If no Ensembl-default location row exists, use default-assembly chr links.
+
+        Mirrors VGNC:30914: the gene's stored location is on a non-default
+        assembly, but its chromosome belongs to the species default assembly via
+        assembly_has_chr. The species all-chromosome query should emit the gene
+        with that chromosome instead of dropping it / nulling location.
+        """
+        import sqlite3
+
+        query = build_gene_data_query(filters={"taxon_id": 9913})
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE genefam (
+                genefam_id INTEGER,
+                taxon_id INTEGER,
+                assigned_id TEXT,
+                assigned_symbol TEXT,
+                assigned_name TEXT,
+                status_id INTEGER
+            );
+            CREATE TABLE gene_has_locus_type (genefam_id INTEGER, locus_type_id INTEGER);
+            CREATE TABLE locus_type (id INTEGER, type TEXT, locus_group_id INTEGER);
+            CREATE TABLE locus_group (id INTEGER, name TEXT);
+            CREATE TABLE gene_has_location (gene_id INTEGER, location_id INTEGER, assembly_id INTEGER);
+            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER, source TEXT, is_current INTEGER);
+            CREATE TABLE assembly_has_chr (assembly_id INTEGER, chr_id INTEGER);
+            CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER, strand TEXT, band TEXT);
+            CREATE TABLE chromosomes (chr_id INTEGER, taxon_id INTEGER, display_name TEXT, coord_system TEXT);
+            CREATE TABLE gene_status (id INTEGER, status TEXT);
+            CREATE TABLE gene_has_family (genefam_id INTEGER, family_id INTEGER);
+            CREATE TABLE family_new (id INTEGER, name TEXT);
+            """
+        )
+
+        # Gene location is on a non-default assembly (29), but chromosome 4 is
+        # present on the default assembly (108) via assembly_has_chr.
+        cur.executemany(
+            "INSERT INTO genefam VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (10, 9913, "VGNC:10", "GENE10", "Gene 10", 6),
+                (11, 9606, "VGNC:11", "GENE11", "Gene 11", 6),
+            ],
+        )
+        cur.executemany(
+            "INSERT INTO assembly VALUES (?, ?, ?, ?, ?)",
+            [
+                (29, 9913, 0, 'NCBI', 0),
+                (108, 9913, 1, 'Ensembl', 1),
+            ],
+        )
+        cur.execute("INSERT INTO gene_has_location VALUES (10, 501, 29)")
+        cur.execute("INSERT INTO gene_location VALUES (501, 4, 106251294, 106252640, '+', 'q1')")
+        cur.execute("INSERT INTO chromosomes VALUES (4, 9913, '4', 'chromosome')")
+        cur.execute("INSERT INTO assembly_has_chr VALUES (108, 4)")
+
+        rows = cur.execute(query.text, {"taxon_id_0": 9913}).fetchall()
+        conn.close()
+
+        gene10_rows = [row for row in rows if row[2] == "VGNC:10"]
+        assert len(gene10_rows) == 1
+        assert gene10_rows[0][8] == "4"  # chromosome
+
     def test_chromosome_filter(self) -> None:
         """Test chromosome filter is applied correctly."""
         query = build_gene_data_query(filters={"chromosome": "X"})
@@ -61,25 +186,20 @@ class TestBuildGeneDataQuery:
         assert "c.display_name" in sql
         assert ":chromosome" in sql
 
-    def test_build_gene_data_query_filters_ghl_to_default_assembly(self) -> None:
-        """The default-assembly filter must RESTRICT gene_has_location rows.
+    def test_build_gene_data_query_filters_ghl_by_default_assembly_chr_membership(self) -> None:
+        """The location filter must live on the ghl JOIN (not as inert joins).
 
-        A predicate on a separate ``LEFT JOIN assembly a ...`` is inert when no
-        ``a.*`` column is selected and ``gene_location``/``chromosomes`` join off
-        ``ghl`` directly -- every location row still emits one output row (the
-        ABHD12 / VGNC:14936 4-row bug). The filter must live on the ``ghl`` JOIN
-        itself as a correlated EXISTS, so non-default-assembly location rows are
-        excluded.
+        It should use assembly_has_chr + default-assembly checks so rows are kept
+        when the location chromosome belongs to the species default assembly.
         """
         query = build_gene_data_query(filters={"taxon_id": 9913})
         sql = query.text
 
-        # The assembly filter must be a correlated EXISTS on the ghl join
+        assert "LEFT JOIN gene_has_location ghl" in sql
         assert "EXISTS" in sql
-        assert "FROM assembly a" in sql
-        assert "a.id = ghl.assembly_id" in sql
-        assert "a.is_vgnc_default = 1" in sql
-        assert "a.taxon_id = gf.taxon_id" in sql
+        assert "assembly_has_chr ahc" in sql
+        assert "a2.is_vgnc_default = 1" in sql
+        assert "a2.taxon_id = gf.taxon_id" in sql
 
     def test_build_gene_data_query_has_no_inert_assembly_join(self) -> None:
         """There must NOT be a standalone LEFT JOIN assembly whose columns are
@@ -90,97 +210,109 @@ class TestBuildGeneDataQuery:
 
         assert "LEFT JOIN assembly a ON ghl.assembly_id = a.id" not in sql
 
-    def test_build_gene_data_query_pins_default_assembly_to_ensembl_source(self) -> None:
-        """The default-assembly EXISTS must pin assembly.source = 'Ensembl'.
-
-        is_vgnc_default is NOT unique per species: VGNC:6926 has two default
-        assemblies (NCBI Pan_tro_3.0 + Ensembl Pan_tro_3.0), which produced two
-        location rows (chromosome 14 and 1). The canonical default is the
-        Ensembl-sourced one, so the EXISTS must include a.source = 'Ensembl'.
-        """
+    def test_build_gene_data_query_is_source_agnostic_for_default_assembly_lookup(self) -> None:
+        """Default-assembly lookup must be source-agnostic (no Ensembl pin)."""
         query = build_gene_data_query(filters={"taxon_id": 9913})
         sql = query.text
-        assert "a.source = 'Ensembl'" in sql
 
-    def test_default_assembly_filter_collapses_to_one_row_per_gene(self) -> None:
-        """Behavioral proof (in-memory SQLite) that restricting gene_has_location
-        to the species' Ensembl-sourced default assembly yields exactly one
-        canonical row per gene, even when a species has MORE THAN ONE default
-        assembly.
+        # Source-agnostic: do not hardcode Ensembl.
+        assert "a.source = 'Ensembl'" not in sql
+        # Query should not need fallback branching when source-agnostic selection
+        # is always used.
+        assert "NOT EXISTS" not in sql
+        assert "assembly_has_chr ahc" in sql
 
-        Mirrors the VGNC:6926 production diagnostic (Pan troglodytes, taxon 9598):
-        a default NCBI Pan_tro_3.0 assembly (chr 14) AND a default Ensembl
-        Pan_tro_3.0 assembly (chr 1), both is_vgnc_default = 1, plus two
-        non-default NCBI assemblies. is_vgnc_default alone is not unique, so the
-        canonical location is the default assembly sourced from 'Ensembl'. A gene
-        with no such location is still preserved (LEFT JOIN, NULL location).
+    def test_default_location_selection_collapses_to_one_row_per_gene(self) -> None:
+        """Dual-default species collapse to one row with source-agnostic ranking.
 
-        (The production query is MySQL-specific, so this runs the load-bearing
-        relational logic -- the EXISTS with the source pin -- in isolation.)
+        If both default assemblies have locations, choose deterministically by
+        row ranking (default first, then current). This proves the query does
+        not assume Ensembl is canonical.
         """
         import sqlite3
+
+        query = build_gene_data_query(filters={"taxon_id": 9598})
 
         conn = sqlite3.connect(":memory:")
         cur = conn.cursor()
         cur.executescript(
             """
-            CREATE TABLE genefam (genefam_id INTEGER, taxon_id INTEGER, assigned_id TEXT);
+            CREATE TABLE genefam (
+                genefam_id INTEGER,
+                taxon_id INTEGER,
+                assigned_id TEXT,
+                assigned_symbol TEXT,
+                assigned_name TEXT,
+                status_id INTEGER
+            );
+            CREATE TABLE gene_has_locus_type (genefam_id INTEGER, locus_type_id INTEGER);
+            CREATE TABLE locus_type (id INTEGER, type TEXT, locus_group_id INTEGER);
+            CREATE TABLE locus_group (id INTEGER, name TEXT);
             CREATE TABLE gene_has_location (gene_id INTEGER, location_id INTEGER, assembly_id INTEGER);
-            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER, source TEXT);
-            CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER);
-            CREATE TABLE chromosomes (chr_id INTEGER, display_name TEXT, taxon_id INTEGER);
+            CREATE TABLE assembly (id INTEGER, taxon_id INTEGER, is_vgnc_default INTEGER, source TEXT, is_current INTEGER);
+            CREATE TABLE assembly_has_chr (assembly_id INTEGER, chr_id INTEGER);
+            CREATE TABLE gene_location (id INTEGER, chr_id INTEGER, start INTEGER, end INTEGER, strand TEXT, band TEXT);
+            CREATE TABLE chromosomes (chr_id INTEGER, taxon_id INTEGER, display_name TEXT, coord_system TEXT);
+            CREATE TABLE gene_status (id INTEGER, status TEXT);
+            CREATE TABLE gene_has_family (genefam_id INTEGER, family_id INTEGER);
+            CREATE TABLE family_new (id INTEGER, name TEXT);
             """
         )
-        # Gene 1 (VGNC:6926): two DEFAULT assemblies (NCBI + Ensembl) + two
-        # non-default NCBI ones. The Ensembl default (assembly 23, chr 1) wins.
-        cur.execute("INSERT INTO genefam VALUES (1, 9598, 'VGNC:6926')")
+
+        # Two defaults (NCBI + Ensembl) both have locations; NCBI is marked
+        # current so source-agnostic ranking should choose it.
+        cur.execute("INSERT INTO genefam VALUES (1, 9598, 'VGNC:6926', 'G1', 'Gene 1', 6)")
         cur.executemany(
-            "INSERT INTO assembly VALUES (?, ?, ?, ?)",
-            [(3, 9598, 1, "NCBI"), (23, 9598, 1, "Ensembl"), (27, 9598, 0, "NCBI"), (104, 9598, 0, "NCBI")],
+            "INSERT INTO assembly VALUES (?, ?, ?, ?, ?)",
+            [
+                (3, 9598, 1, 'NCBI', 1),
+                (23, 9598, 1, 'Ensembl', 0),
+                (27, 9598, 0, 'NCBI', 0),
+                (104, 9598, 0, 'NCBI', 0),
+            ],
         )
         cur.executemany(
             "INSERT INTO gene_has_location VALUES (?, ?, ?)",
             [(1, 412433, 3), (1, 486777, 23), (1, 584093, 27), (1, 1546350, 104)],
         )
         cur.executemany(
-            "INSERT INTO gene_location VALUES (?, ?, ?, ?)",
-            [(412433, 14, 21176277, 21566347), (486777, 1, 136605058, 136605999),
-             (584093, 14, 18212875, 18594504), (1546350, 14, 28669951, 29052657)],
+            "INSERT INTO gene_location VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (412433, 14, 21176277, 21566347, '+', 'q1'),
+                (486777, 1, 136605058, 136605999, '+', 'q1'),
+                (584093, 14, 18212875, 18594504, '+', 'q1'),
+                (1546350, 14, 28669951, 29052657, '+', 'q1'),
+            ],
         )
         cur.executemany(
-            "INSERT INTO chromosomes VALUES (?, ?, ?)",
-            [(14, "14", 9598), (1, "1", 9598)],
+            "INSERT INTO chromosomes VALUES (?, ?, ?, ?)",
+            [(14, 9598, '14', 'chromosome'), (1, 9598, '1', 'chromosome')],
         )
-        # Gene 2: no location at all.
-        cur.execute("INSERT INTO genefam VALUES (2, 9598, 'VGNC:99999')")
+        cur.executemany(
+            "INSERT INTO assembly_has_chr VALUES (?, ?)",
+            [(3, 14), (23, 1), (23, 14)],
+        )
 
-        rows = cur.execute(
-            """
-            SELECT gf.genefam_id, gf.assigned_id, c.display_name, gl.start
-            FROM genefam gf
-            LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
-                AND EXISTS (SELECT 1 FROM assembly a
-                            WHERE a.id = ghl.assembly_id
-                              AND a.is_vgnc_default = 1
-                              AND a.taxon_id = gf.taxon_id
-                              AND a.source = 'Ensembl')
-            LEFT JOIN gene_location gl ON ghl.location_id = gl.id
-            LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
-            """
-        ).fetchall()
+        # Gene 2: no location.
+        cur.execute("INSERT INTO genefam VALUES (2, 9598, 'VGNC:99999', 'G2', 'Gene 2', 6)")
+
+        rows = cur.execute(query.text, {"taxon_id_0": 9598}).fetchall()
         conn.close()
 
-        by_gene: dict[int, list] = {}
-        for gid, _aid, chr_, start in rows:
-            by_gene.setdefault(gid, []).append((chr_, start))
+        by_gene: dict[str, list[tuple[str | None, int | None]]] = {}
+        for row in rows:
+            assigned_id = row[2]
+            chromosome = row[8]
+            start = row[9]
+            by_gene.setdefault(assigned_id, []).append((chromosome, start))
 
-        # Gene collapses to exactly one row: the Ensembl default (chr 1).
-        assert len(by_gene[1]) == 1, f"gene 1 should have 1 row, got {len(by_gene[1])}"
-        assert by_gene[1][0][0] == "1", "must be the Ensembl default's chromosome"
-        assert by_gene[1][0][1] == 136605058  # Ensembl default's start
-        # Locationless gene is still emitted (LEFT JOIN preserved), with NULL location.
-        assert len(by_gene[2]) == 1, "locationless gene must be preserved"
-        assert by_gene[2][0][0] is None
+        assert len(by_gene['VGNC:6926']) == 1
+        # Source-agnostic ranking picks the current default row (assembly 3, chr14)
+        assert by_gene['VGNC:6926'][0][0] == '14'
+        assert by_gene['VGNC:6926'][0][1] == 21176277
+
+        assert len(by_gene['VGNC:99999']) == 1
+        assert by_gene['VGNC:99999'][0][0] is None
 
     def test_chromosome_filter_un_uses_like(self) -> None:
         """Test that 'Un' chromosome uses LIKE for prefix matching.

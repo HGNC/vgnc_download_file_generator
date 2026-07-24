@@ -24,13 +24,11 @@ def build_gene_data_query(
     - Gene status (gene_status)
     - Locus type and group (locus_type, locus_group)
     - Genomic location (gene_has_location, assembly, gene_location, chromosomes).
-      The gene_has_location join is restricted to the species' default VGNC
-      assembly via a correlated EXISTS (assembly.is_vgnc_default = 1, matching
-      taxon_id, and assembly.source = 'Ensembl') so each gene emits exactly one
-      canonical location. is_vgnc_default is NOT unique per species (a species
-      can carry a default NCBI + a default Ensembl assembly -- see VGNC:6926),
-      so the Ensembl source pin selects the canonical default instead of one
-      row per default assembly.
+      Location selection is source-agnostic: choose one best location row whose
+      chromosome belongs to any species default assembly via assembly_has_chr.
+      This recovers genes such as VGNC:30914 where location is stored on a
+      non-default assembly but the chromosome is part of the default assembly,
+      while still collapsing to one row per gene.
     - Gene family (gene_has_family, family_new)
 
     Xrefs, aliases, and dates are fetched in separate queries.
@@ -75,15 +73,38 @@ def build_gene_data_query(
         LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id
         LEFT JOIN locus_group lg ON lt.locus_group_id = lg.id
         LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
-            AND EXISTS (
-                SELECT 1 FROM assembly a
-                WHERE a.id = ghl.assembly_id
-                    AND a.is_vgnc_default = 1
-                    AND a.taxon_id = gf.taxon_id
-                    AND a.source = 'Ensembl'
+            AND ghl.location_id = (
+                SELECT ghl_pick.location_id
+                FROM gene_has_location ghl_pick
+                JOIN gene_location gl_pick ON gl_pick.id = ghl_pick.location_id
+                JOIN chromosomes c_pick ON c_pick.chr_id = gl_pick.chr_id
+                LEFT JOIN assembly a_pick ON a_pick.id = ghl_pick.assembly_id
+                WHERE ghl_pick.gene_id = gf.genefam_id
+                    AND c_pick.taxon_id = gf.taxon_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM assembly_has_chr ahc
+                        JOIN assembly a2 ON a2.id = ahc.assembly_id
+                        WHERE ahc.chr_id = c_pick.chr_id
+                            AND a2.is_vgnc_default = 1
+                            AND a2.taxon_id = gf.taxon_id
+                    )
+                ORDER BY
+                    CASE
+                        WHEN a_pick.is_vgnc_default = 1 THEN 0
+                        ELSE 1
+                    END,
+                    CASE
+                        WHEN a_pick.is_current = 1 THEN 0
+                        ELSE 1
+                    END,
+                    a_pick.id DESC,
+                    ghl_pick.location_id DESC
+                LIMIT 1
             )
         LEFT JOIN gene_location gl ON ghl.location_id = gl.id
         LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
+            AND c.taxon_id = gf.taxon_id
         LEFT JOIN gene_status gs ON gf.status_id = gs.id
         LEFT JOIN gene_has_family ghf ON gf.genefam_id = ghf.genefam_id
         LEFT JOIN family_new fn ON ghf.family_id = fn.id
@@ -96,18 +117,12 @@ def build_gene_data_query(
     param_counter = 0
 
     if filters:
-        # Filter by taxon_id - ensures both genes AND chromosomes belong to the species
+        # Filter by species taxon_id (gene rows). Chromosome taxon safety
+        # is enforced in the LEFT JOIN ON clause so locationless genes remain.
         if "taxon_id" in filters:
             param_name = f"taxon_id_{param_counter}"
             where_clauses.append(f"gf.taxon_id = :{param_name}")
             bind_params[param_name] = filters["taxon_id"]  # type: ignore[assignment]
-            # Also filter chromosomes to prevent cross-species contamination
-            # For "Un" chromosome, allow NULL chromosomes (genes without location)
-            chromosome_is_un = filters.get("chromosome") == "Un"
-            if chromosome_is_un:
-                where_clauses.append("(c.taxon_id = gf.taxon_id OR c.chr_id IS NULL)")
-            else:
-                where_clauses.append("c.taxon_id = gf.taxon_id")
             param_counter += 1
 
         # Filter by chromosome
