@@ -257,11 +257,13 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
 def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     """Build query for alias symbols and names using GROUP_CONCAT.
 
-    Fetches:
-    - alias_symbol: Non-previous alternative symbols
-    - alias_name: Non-previous alternative names
-    - prev_symbol: Previous symbols
-    - prev_name: Previous names
+    Fetches, routing each output column by its exact nomenclature_type value
+    (the vgnc_public nomenclature_type rows are: previous_symbol,
+    previous_name, alias_symbol, alias_name):
+    - alias_symbol: alt_symbol rows of nomenclature_type = 'alias_symbol'
+    - alias_name:   alt_name   rows of nomenclature_type = 'alias_name'
+    - prev_symbol:  alt_symbol rows of nomenclature_type = 'previous_symbol'
+    - prev_name:    alt_name   rows of nomenclature_type = 'previous_name'
 
     Args:
         genefam_ids: List of genefam_ids to filter (from main query results)
@@ -285,7 +287,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
             GROUP_CONCAT(prev_symbol ORDER BY prev_symbol SEPARATOR '|') AS prev_symbol,
             GROUP_CONCAT(prev_name ORDER BY prev_name SEPARATOR '|') AS prev_name
         FROM (
-            -- Non-previous symbols
+            -- Alias symbols (nomenclature_type = 'alias_symbol')
             SELECT
                 gas.genefam_id,
                 als.symbol AS alias_symbol,
@@ -295,7 +297,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
             FROM gene_alt_symbol gas
             JOIN alt_symbol als ON gas.symbol_id = als.id
             JOIN nomenclature_type nt ON als.nomenclature_type_id = nt.id
-            WHERE nt.type != 'Previous'
+            WHERE nt.type = 'alias_symbol'
     """
 
     if genefam_ids:
@@ -304,7 +306,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql += """
             UNION ALL
 
-            -- Non-previous names
+            -- Alias names (nomenclature_type = 'alias_name')
             SELECT
                 gan.genefam_id,
                 NULL AS alias_symbol,
@@ -314,7 +316,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
             FROM gene_alt_name gan
             JOIN alt_name aln ON gan.name_id = aln.id
             JOIN nomenclature_type nt ON aln.nomenclature_type_id = nt.id
-            WHERE nt.type != 'Previous'
+            WHERE nt.type = 'alias_name'
     """
 
     if genefam_ids:
@@ -323,7 +325,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql += """
             UNION ALL
 
-            -- Previous symbols
+            -- Previous symbols (nomenclature_type = 'previous_symbol')
             SELECT
                 gas.genefam_id,
                 NULL AS alias_symbol,
@@ -333,7 +335,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
             FROM gene_alt_symbol gas
             JOIN alt_symbol als ON gas.symbol_id = als.id
             JOIN nomenclature_type nt ON als.nomenclature_type_id = nt.id
-            WHERE nt.type = 'Previous'
+            WHERE nt.type = 'previous_symbol'
     """
 
     if genefam_ids:
@@ -342,7 +344,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
     sql += """
             UNION ALL
 
-            -- Previous names
+            -- Previous names (nomenclature_type = 'previous_name')
             SELECT
                 gan.genefam_id,
                 NULL AS alias_symbol,
@@ -352,7 +354,7 @@ def build_aliases_query(genefam_ids: list[int] | None = None) -> TextClause:
             FROM gene_alt_name gan
             JOIN alt_name aln ON gan.name_id = aln.id
             JOIN nomenclature_type nt ON aln.nomenclature_type_id = nt.id
-            WHERE nt.type = 'Previous'
+            WHERE nt.type = 'previous_name'
     """
 
     if genefam_ids:

@@ -6,6 +6,11 @@ multiple simpler queries and merging results in Python.
 
 
 
+import os
+import random
+from collections.abc import Iterator
+
+import pytest
 from sqlalchemy.sql.expression import TextClause
 
 from vgnc_download_file_generator.database.queries_split import (
@@ -686,3 +691,138 @@ class TestMergeGeneResults:
         # Spot check a few
         assert result[0]["assigned_symbol"] == "GENE1"
         assert result[99]["assigned_symbol"] == "GENE100"
+
+
+# Production nomenclature_type rows, verified against the live vgnc_public
+# database (they are NOT 'Previous'/'Alias' -- see spec
+# fix-prev-symbol-routing.md).
+_NOMENCLATURE_TYPES: list[tuple[int, str]] = [
+    (1, "previous_symbol"),
+    (2, "previous_name"),
+    (3, "alias_symbol"),
+    (4, "alias_name"),
+]
+
+
+@pytest.mark.integration
+class TestBuildAliasesQueryRouting:
+    """Behavioral test: prev vs alias routing by nomenclature_type.
+
+    Runs the REAL build_aliases_query against an ephemeral MySQL schema seeded
+    with the four production nomenclature_type values. This is the regression
+    guard for the bug where prev_symbol / prev_name shipped empty because the
+    query filtered on the literal 'Previous', which does not exist in the
+    database -- every previous value leaked into the alias fields.
+
+    The query uses MySQL-only ``GROUP_CONCAT ... SEPARATOR``, so it cannot run
+    on the in-memory SQLite harness used elsewhere in this file; a real MySQL
+    (local or CI) is required. Connect via ``MYSQL_TEST_DSN`` (default
+    ``root:root@127.0.0.1:3306``); skipped unless ``--integration`` is passed.
+    """
+
+    @pytest.fixture
+    def mysql_aliases_schema(self) -> Iterator[object]:
+        """Create an ephemeral MySQL schema seeded with one gene of each type.
+
+        Yields a MySQLdb connection already USE'd onto the ephemeral schema.
+        Drops the schema on teardown.
+        """
+        import MySQLdb
+
+        dsn = os.environ.get("MYSQL_TEST_DSN", "root:root@127.0.0.1:3306")
+        creds, hostport = dsn.rsplit("@", 1)
+        user, passwd = creds.split(":", 1)
+        host, port = hostport.split(":", 1)
+        schema = f"test_vgnc_aliases_{os.getpid()}_{random.randint(1000, 9999)}"
+
+        conn = MySQLdb.connect(host=host, user=user, passwd=passwd, port=int(port))
+        cur = conn.cursor()
+        try:
+            cur.execute(f"CREATE DATABASE `{schema}`")
+            cur.execute(f"USE `{schema}`")
+            for stmt in (
+                "CREATE TABLE nomenclature_type (id INT PRIMARY KEY, type VARCHAR(45))",
+                "CREATE TABLE alt_symbol "
+                "(id INT PRIMARY KEY, symbol VARCHAR(45), nomenclature_type_id INT)",
+                "CREATE TABLE alt_name "
+                "(id INT PRIMARY KEY, name VARCHAR(255), nomenclature_type_id INT)",
+                "CREATE TABLE gene_alt_symbol "
+                "(id INT PRIMARY KEY, genefam_id INT, symbol_id INT)",
+                "CREATE TABLE gene_alt_name "
+                "(id INT PRIMARY KEY, genefam_id INT, name_id INT)",
+            ):
+                cur.execute(stmt)
+            cur.executemany(
+                "INSERT INTO nomenclature_type VALUES (%s, %s)", _NOMENCLATURE_TYPES
+            )
+            # Gene 1 carries exactly one value of EACH nomenclature type.
+            cur.executemany(
+                "INSERT INTO alt_symbol VALUES (%s, %s, %s)",
+                [(10, "PREV_SYM", 1), (11, "ALIAS_SYM", 3)],
+            )
+            cur.executemany(
+                "INSERT INTO alt_name VALUES (%s, %s, %s)",
+                [(20, "Previous name", 2), (21, "Alias name", 4)],
+            )
+            cur.executemany(
+                "INSERT INTO gene_alt_symbol VALUES (%s, %s, %s)",
+                [(1, 1, 10), (2, 1, 11)],
+            )
+            cur.executemany(
+                "INSERT INTO gene_alt_name VALUES (%s, %s, %s)",
+                [(1, 1, 20), (2, 1, 21)],
+            )
+            conn.commit()
+            yield conn
+        finally:
+            cur.execute(f"DROP DATABASE IF EXISTS `{schema}`")
+            cur.close()
+            conn.close()
+
+    @staticmethod
+    def _fetch_aliases(conn: object, genefam_id: int) -> dict[str, str | None]:
+        """Run build_aliases_query for one gene and return its row as a dict."""
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
+
+        cur = conn.cursor()  # type: ignore[attr-defined]
+        query = build_aliases_query(genefam_ids=[genefam_id])
+        sql, params = compile_query_for_mysql(query)
+        cur.execute(sql, params)
+        cols = [desc[0] for desc in cur.description]
+        row = dict(zip(cols, cur.fetchone(), strict=False))
+        cur.close()
+        return row
+
+    def test_routes_each_nomenclature_type_to_correct_output(
+        self, mysql_aliases_schema: object
+    ) -> None:
+        """prev_* and alias_* must each hold only their own nomenclature type.
+
+        Fails on the buggy query: prev_symbol/prev_name come back NULL (no type
+        equals 'Previous') and the previous values leak into the alias fields.
+        """
+        row = self._fetch_aliases(mysql_aliases_schema, genefam_id=1)
+
+        assert row["prev_symbol"] == "PREV_SYM", (
+            f"prev_symbol should be PREV_SYM, got {row['prev_symbol']!r} "
+            f"(alias_symbol={row['alias_symbol']!r})"
+        )
+        assert row["prev_name"] == "Previous name", (
+            f"prev_name should be 'Previous name', got {row['prev_name']!r} "
+            f"(alias_name={row['alias_name']!r})"
+        )
+        assert row["alias_symbol"] == "ALIAS_SYM"
+        assert row["alias_name"] == "Alias name"
+
+    def test_previous_value_does_not_leak_into_alias(
+        self, mysql_aliases_schema: object
+    ) -> None:
+        """A previous symbol/name must never appear in the alias fields."""
+        row = self._fetch_aliases(mysql_aliases_schema, genefam_id=1)
+
+        alias_symbols = (row["alias_symbol"] or "").split("|")
+        alias_names = (row["alias_name"] or "").split("|")
+        assert "PREV_SYM" not in alias_symbols
+        assert "Previous name" not in alias_names
