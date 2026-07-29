@@ -52,3 +52,9 @@ vgnc-pipeline-dev.json
 # Pi agent local state
 .pi/
 .pi-subagents
+
+# Large VGNC data dumps -- do NOT commit (too big for the remote).
+# These are local-only sources used to regenerate the trimmed fixtures in
+# tests/fixtures/. Trimmed fixtures ARE committed.
+.ai/specs/vgnc_public_2026_07_05_data.sql
+.ai/specs/*_data.sql
