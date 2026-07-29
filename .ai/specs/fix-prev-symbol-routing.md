@@ -1,6 +1,6 @@
 # Spec: Fix prev_symbol / prev_name routing into alias fields
 
-> Status: RED test failing; awaiting GREEN
+> Status: FIXED + verified on prod; synthetic + real-data tests green
 > Branch: `task-fix-prev-symbol-routing` (off `gcp`)
 
 ## Problem (client report)
@@ -91,3 +91,15 @@ confirm `C17orf75` is in `prev_symbol`, `alias_symbol` excludes it.
 
 - **Verify:** manual query returns prev_symbol = `C17orf75`, alias_symbol does not
   contain it.
+
+### Task 4 — real-data fixture test (from vgnc_public_2026_07_05 dump)
+Trim the dump's five alias tables (nomenclature_type, alt_symbol, alt_name,
+gene_alt_symbol, gene_alt_name) into a committed fixture
+(`tests/fixtures/vgnc_aliases_snapshot.sql`) and add an integration test that
+cross-checks the SQL output against an independent Python re-derivation for
+every gene, plus headline spot-checks: alias-only gene 697, previous-only gene
+13195, and gene 91593 (VGNC:81821) whose same name string is stored under both
+`alias_name` and `previous_name` (per-type routing). Confirmed to fail on the
+old `= 'Previous'` query.
+
+- **Verify:** `pytest tests/test_split_queries.py::TestBuildAliasesQueryRealSnapshot --integration` passes.

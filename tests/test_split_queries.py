@@ -9,6 +9,8 @@ multiple simpler queries and merging results in Python.
 import os
 import random
 from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.sql.expression import TextClause
@@ -826,3 +828,190 @@ class TestBuildAliasesQueryRouting:
         alias_names = (row["alias_name"] or "").split("|")
         assert "PREV_SYM" not in alias_symbols
         assert "Previous name" not in alias_names
+
+
+# Trimmed real-data extract of the vgnc_public_2026_07_05 snapshot: only the
+# five tables read by build_aliases_query. Lets the test exercise the real
+# nomenclature_type values and distributions without the 262 MB full dump.
+_ALIASES_FIXTURE = Path(__file__).parent / "fixtures" / "vgnc_aliases_snapshot.sql"
+
+
+@pytest.mark.integration
+class TestBuildAliasesQueryRealSnapshot:
+    """Real-data cross-check of build_aliases_query vs the production snapshot.
+
+    Loads the trimmed vgnc_public_2026_07_05 extract into an ephemeral MySQL,
+    runs the REAL query, and asserts the output matches an independent Python
+    re-derivation for EVERY gene (different code path than the SQL, so a routing
+    bug like the old '= Previous' literal is caught). Also pins the headline
+    cases:
+      - gene 697   : alias-only gene (alias_symbol=CYP5A1).
+      - gene 13195 : previous-only gene (prev_symbol=H1FNT).
+      - gene 91593 (VGNC:81821): the SAME name string appears in BOTH alias_name
+        and prev_name because curators stored it under both nomenclature types
+        -- proves routing is by nomenclature_type, not by string value.
+    """
+
+    # Minimal column layout matching the fixture's named-column INSERTs.
+    _DDL = (
+        "CREATE TABLE nomenclature_type (id INT PRIMARY KEY, type VARCHAR(45))",
+        "CREATE TABLE alt_symbol "
+        "(id INT PRIMARY KEY, symbol VARCHAR(45), nomenclature_type_id INT)",
+        "CREATE TABLE alt_name "
+        "(id INT PRIMARY KEY, name VARCHAR(255), nomenclature_type_id INT)",
+        "CREATE TABLE gene_alt_symbol "
+        "(id INT PRIMARY KEY, genefam_id INT, symbol_id INT)",
+        "CREATE TABLE gene_alt_name "
+        "(id INT PRIMARY KEY, genefam_id INT, name_id INT)",
+    )
+
+    @pytest.fixture
+    def snapshot_db(self) -> Iterator[Any]:
+        """Ephemeral MySQL schema loaded with the real alias snapshot data."""
+        import MySQLdb
+
+        dsn = os.environ.get("MYSQL_TEST_DSN", "root:root@127.0.0.1:3306")
+        creds, hostport = dsn.rsplit("@", 1)
+        user, passwd = creds.split(":", 1)
+        host, port = hostport.split(":", 1)
+        schema = f"test_vgnc_alias_snap_{os.getpid()}_{random.randint(1000, 9999)}"
+
+        conn = MySQLdb.connect(host=host, user=user, passwd=passwd, port=int(port))
+        cur = conn.cursor()
+        try:
+            cur.execute(f"CREATE DATABASE `{schema}`")
+            cur.execute(f"USE `{schema}`")
+            for stmt in self._DDL:
+                cur.execute(stmt)
+            # Load the real-data fixture (one INSERT statement per line).
+            for line in _ALIASES_FIXTURE.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("INSERT INTO"):
+                    cur.execute(line)
+            conn.commit()
+            yield conn
+        finally:
+            cur.execute(f"DROP DATABASE IF EXISTS `{schema}`")
+            cur.close()
+            conn.close()
+
+    @staticmethod
+    def _query_rows(conn: Any) -> dict[int, dict[str, set[str]]]:
+        """Run build_aliases_query for all genes; return genefam_id -> field sets."""
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
+
+        cur = conn.cursor()
+        sql, params = compile_query_for_mysql(build_aliases_query())
+        cur.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+
+        def to_set(pipe_value: object) -> set[str]:
+            return {v for v in str(pipe_value or "").split("|") if v}
+
+        out: dict[int, dict[str, set[str]]] = {}
+        for row in cur.fetchall():
+            r = dict(zip(cols, row, strict=False))
+            gid = r["genefam_id"]
+            out[gid] = {
+                "alias_symbol": to_set(r["alias_symbol"]),
+                "alias_name": to_set(r["alias_name"]),
+                "prev_symbol": to_set(r["prev_symbol"]),
+                "prev_name": to_set(r["prev_name"]),
+            }
+        cur.close()
+        return out
+
+    @staticmethod
+    def _expected_rows(conn: Any) -> dict[int, dict[str, set[str]]]:
+        """Independently re-derive the expected field sets from the raw tables.
+
+        Pure-Python grouping (a different code path than the SQL), so it is a
+        genuine oracle for the query's routing.
+        """
+        cur = conn.cursor()
+        cur.execute("SELECT id, type FROM nomenclature_type")
+        type_str = {int(i): t for i, t in cur.fetchall()}
+        # nomenclature_type value -> output column name. The DB uses
+        # 'previous_symbol'/'previous_name' but the download columns are
+        # 'prev_symbol'/'prev_name' -- this mapping is exactly what the original
+        # bug got wrong (it assumed a literal 'Previous' instead).
+        field_for_type = {
+            "previous_symbol": "prev_symbol",
+            "previous_name": "prev_name",
+            "alias_symbol": "alias_symbol",
+            "alias_name": "alias_name",
+        }
+        cur.execute("SELECT id, symbol, nomenclature_type_id FROM alt_symbol")
+        sym = {int(i): (s, int(t)) for i, s, t in cur.fetchall()}
+        cur.execute("SELECT id, name, nomenclature_type_id FROM alt_name")
+        name = {int(i): (n, int(t)) for i, n, t in cur.fetchall()}
+
+        out: dict[int, dict[str, set[str]]] = {}
+        for table, lookup, key_for in (
+            ("gene_alt_symbol", sym, "symbol_id"),
+            ("gene_alt_name", name, "name_id"),
+        ):
+            cur.execute(f"SELECT genefam_id, {key_for} FROM {table}")
+            for gid, ref in cur.fetchall():
+                gid, ref = int(gid), int(ref)
+                value, tid = lookup[ref]
+                field = field_for_type[type_str[tid]]
+                out.setdefault(gid, {
+                    "alias_symbol": set(), "alias_name": set(),
+                    "prev_symbol": set(), "prev_name": set(),
+                })[field].add(value)
+        cur.close()
+        return out
+
+    def test_nomenclature_types_are_the_real_production_values(
+        self, snapshot_db: Any
+    ) -> None:
+        """The fixture carries the four real nomenclature_type strings."""
+        cur = snapshot_db.cursor()
+        cur.execute("SELECT type FROM nomenclature_type ORDER BY id")
+        types = [r[0] for r in cur.fetchall()]
+        cur.close()
+        assert types == [
+            "previous_symbol", "previous_name", "alias_symbol", "alias_name",
+        ]
+
+    def test_query_matches_independent_derivation_for_every_gene(
+        self, snapshot_db: Any
+    ) -> None:
+        """SQL routing must equal a Python re-derivation for all genes.
+
+        This is the comprehensive guard: a wrong filter literal (e.g. the old
+        'Previous') would route previous values into alias fields and leave
+        prev_* empty, diverging from this oracle.
+        """
+        actual = self._query_rows(snapshot_db)
+        expected = self._expected_rows(snapshot_db)
+        assert set(actual) == set(expected), "gene sets differ"
+        for gid in expected:
+            assert actual[gid] == expected[gid], f"routing mismatch for gene {gid}"
+
+    def test_alias_only_gene_routes_to_alias_fields(self, snapshot_db: Any) -> None:
+        """Gene 697 carries only alias-typed rows -> alias_* set, prev_* empty."""
+        row = self._query_rows(snapshot_db)[697]
+        assert row["alias_symbol"] == {"CYP5A1"}
+        assert row["prev_symbol"] == set()
+        # Its alias_name is the cytochrome name; prev_name must be empty.
+        assert row["prev_name"] == set()
+
+    def test_previous_only_gene_routes_to_prev_fields(self, snapshot_db: Any) -> None:
+        """Gene 13195 carries only previous-typed rows -> prev_* set, alias_* empty."""
+        row = self._query_rows(snapshot_db)[13195]
+        assert row["prev_symbol"] == {"H1FNT"}
+        assert row["alias_symbol"] == set()
+        assert row["prev_name"] == {"H1 histone family member N, testis specific"}
+
+    def test_dual_type_name_appears_in_both_fields(self, snapshot_db: Any) -> None:
+        """VGNC:81821 (gene 91593): same string stored as both alias_name and
+        previous_name must surface in BOTH fields (per-type routing)."""
+        row = self._query_rows(snapshot_db)[91593]
+        cyto = "cytochrome P450 family 5 subfamily A member 1"
+        assert row["alias_symbol"] == {"CYP5A1"}
+        assert cyto in row["alias_name"]
+        assert cyto in row["prev_name"]
