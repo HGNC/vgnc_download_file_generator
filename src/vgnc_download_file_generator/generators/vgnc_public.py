@@ -8,7 +8,7 @@ import json
 from collections.abc import Generator, Iterator
 from typing import Any
 
-from vgnc_download_file_generator.generator import BaseFileGenerator
+from vgnc_download_file_generator.generator import PUBLIC_STATUS_IDS, BaseFileGenerator
 
 
 def format_location_sortable(chromosome: str | None) -> str | None:
@@ -182,7 +182,7 @@ class VgncPublic(BaseFileGenerator):
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
-        filters["status_id"] = [6, 11, 12]
+        filters["status_id"] = PUBLIC_STATUS_IDS
 
         column_map = self._get_column_map()
 

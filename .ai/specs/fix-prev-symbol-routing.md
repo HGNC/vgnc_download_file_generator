@@ -103,3 +103,38 @@ every gene, plus headline spot-checks: alias-only gene 697, previous-only gene
 old `= 'Previous'` query.
 
 - **Verify:** `pytest tests/test_split_queries.py::TestBuildAliasesQueryRealSnapshot --integration` passes.
+
+## Sweep: other hardcoded DB-content literals (same bug family)
+
+Audited every hardcoded value the SQL/generators match against DB *data* (not
+structure) against the vgnc_public_2026_07_05 dump. **All are currently
+correct** -- nomenclature_type was the only actual bug:
+
+| Literal | Where | Real value | Status |
+|---|---|---|---|
+| `db_name` x7 (ncbi_gene, ensembl_gene, uniprot_protein, pubmed, hgnc_ortholog, bgd_gene, horde) | build_xrefs_query | all present in database_resource | OK |
+| `status_id [6,11,12]` | vgnc_public, vgnc_ensembl | Approved / Auto Approved / Cont Approved (display=Approved) | OK |
+| `status_id [2,3]` | vgnc_withdrawn | Symbol Withdrawn / Entry Withdrawn | OK |
+| `field_changed` assigned_symbol/assigned_name | build_dates_query | both present in change_type | OK |
+| `nomenclature_type` x4 | build_aliases_query | previous_symbol/previous_name/alias_symbol/alias_name | FIXED (was 'Previous') |
+
+Note: pubmed (db_name id 23) has **0 genes** in this snapshot, so it has no
+real-data xref coverage; it is synthesised in the xrefs test to exercise the
+pubmed_id code path, and its literal is pinned by the dictionary contract test.
+
+### Guards added (tests/test_query_data_contracts.py)
+- **Dictionary contract test**: loads the real lookup tables and asserts every
+  hardcoded literal exists (catches DB drift / renumbering). status_id lists are
+  imported from the generators as named constants (single source of truth) so
+  code and test cannot drift apart.
+- **xref routing cross-check**: runs the real build_xrefs_query vs an
+  independent Python re-derivation for every gene in the sample -- a wrong
+  db_name routes to the wrong column and the oracle disagrees. Verified to fail
+  on a broken db_name literal.
+- **dates routing cross-check**: same approach for field_changed -> date cols.
+  Verified to fail on a broken field_changed literal.
+- **status_id IN-filter test**: behavioural (SQLite) check that the lists
+  actually select the right gene rows.
+
+Source change: `PUBLIC_STATUS_IDS` / `WITHDRAWN_STATUS_IDS` extracted to
+generator.py (previously inline `[6,11,12]` / `[2,3]` in three files).

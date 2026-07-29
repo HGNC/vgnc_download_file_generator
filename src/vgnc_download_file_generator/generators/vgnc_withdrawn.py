@@ -8,7 +8,10 @@ import json
 from collections.abc import Generator, Iterator
 from typing import Any
 
-from vgnc_download_file_generator.generator import BaseFileGenerator
+from vgnc_download_file_generator.generator import (
+    WITHDRAWN_STATUS_IDS,
+    BaseFileGenerator,
+)
 
 
 class VgncWithdrawn(BaseFileGenerator):
@@ -107,7 +110,7 @@ class VgncWithdrawn(BaseFileGenerator):
         if self.locus_type is not None:
             filters["locus_type"] = self.locus_type
 
-        filters["status_id"] = [2, 3]
+        filters["status_id"] = WITHDRAWN_STATUS_IDS
 
         column_map = self._get_column_map()
 

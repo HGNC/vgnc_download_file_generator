@@ -12,6 +12,14 @@ from vgnc_download_file_generator.database.connection import DatabaseConnection
 from vgnc_download_file_generator.models.file_spec import FileSpec
 from vgnc_download_file_generator.models.species import SpeciesInfo
 
+# gene_status ids that select which genes appear in each download file.
+# Verified against the vgnc_public_2026_07_05 snapshot and pinned by
+# tests/test_query_data_contracts.py::TestCodeAssumptionsMatchRealDictionary.
+# Public + Ensembl files: the Approved-family statuses (display = 'Approved').
+PUBLIC_STATUS_IDS: list[int] = [6, 11, 12]
+# Withdrawn file: the withdrawn statuses.
+WITHDRAWN_STATUS_IDS: list[int] = [2, 3]
+
 
 class BaseFileGenerator(ABC):
     """Abstract base class for file generators.
