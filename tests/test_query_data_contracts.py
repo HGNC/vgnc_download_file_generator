@@ -55,10 +55,13 @@ _DICT_DDL = (
 # Includes the full dict DDL because the dictionary fixture (all four lookup
 # tables) is co-loaded to populate database_resource.
 _XREFS_DDL = _DICT_DDL + (
+    "CREATE TABLE genefam (genefam_id INT PRIMARY KEY, assigned_id VARCHAR(28), taxon_id INT)",
     "CREATE TABLE xref (id INT PRIMARY KEY, external_db_id INT, xref VARCHAR(255), "
     "status VARCHAR(45))",
     "CREATE TABLE gene_has_xrefs (genefam_id INT, xref_id INT, created_by INT, "
     "curated INT, created DATE, modified DATE)",
+    "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, "
+    "db_id_a VARCHAR(255), vgnc_b VARCHAR(28))",
 )
 # Includes the full dict DDL; change_type is populated from the dict fixture.
 _DATES_DDL = _DICT_DDL + (
@@ -218,6 +221,15 @@ class TestBuildXrefsQueryRealSnapshot:
     @pytest.fixture
     def xrefs_db(self) -> Iterator[Any]:
         with _ephemeral_mysql(_XREFS_DDL, (_DICT_FIXTURE, _XREFS_FIXTURE)) as conn:
+            # build_xrefs_query joins genefam (for ortholog fallback), so seed
+            # minimal gene rows for all genefam_ids present in xref fixture data.
+            _load_lines(
+                conn,
+                "INSERT INTO genefam (genefam_id, assigned_id, taxon_id) "
+                "SELECT DISTINCT genefam_id, CONCAT('VGNC:', genefam_id), 9999 "
+                "FROM gene_has_xrefs;",
+            )
+
             # PubMed has zero real rows in this snapshot, so synthesise one
             # link for gene 110150 to exercise the pubmed_id code path
             # (database_resource id 23 = 'pubmed', loaded from the dict fixture).

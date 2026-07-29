@@ -449,10 +449,13 @@ class TestBuildXrefsQuery:
         assert "MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id" in sql
 
     def test_xrefs_hgnc_ortholog_uses_hgnc_ortholog_resource_name(self) -> None:
-        """HGNC ortholog mapping must use db_name='hgnc_ortholog'."""
+        """HGNC ortholog mapping uses xref db_name with ortholog-table fallback."""
         query = build_xrefs_query()
         sql = query.text
-        assert "dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs" in sql
+        assert "dr.db_name = 'hgnc_ortholog' THEN x.xref END" in sql
+        assert "COALESCE(" in sql
+        assert "JOIN genefam_orthologs go" in sql
+        assert "go.db_id_a" in sql
 
     def test_xrefs_joins_database_resource(self) -> None:
         """The query must join database_resource to resolve stable db_name values."""
@@ -491,6 +494,83 @@ class TestBuildXrefsQuery:
 
         # Should have IN clause for genefam_ids
         assert "IN" in sql
+
+
+@pytest.mark.integration
+class TestBuildXrefsQueryOrthologFallback:
+    """Regression guard: hgnc_orthologs falls back to genefam_orthologs.
+
+    Some genes have HGNC orthologs in ``genefam_orthologs`` (ortholog section
+    on the gene symbol report) but no ``hgnc_ortholog`` xref rows. The export
+    must still populate ``hgnc_orthologs`` for those genes.
+    """
+
+    @pytest.fixture
+    def mysql_xrefs_schema(self) -> Iterator[object]:
+        import MySQLdb
+
+        dsn = os.environ.get("MYSQL_TEST_DSN", "root:root@127.0.0.1:3306")
+        creds, hostport = dsn.rsplit("@", 1)
+        user, passwd = creds.split(":", 1)
+        host, port = hostport.split(":", 1)
+        schema = f"test_vgnc_xref_orth_{os.getpid()}_{random.randint(1000, 9999)}"
+
+        conn = MySQLdb.connect(host=host, user=user, passwd=passwd, port=int(port))
+        cur = conn.cursor()
+        try:
+            cur.execute(f"CREATE DATABASE `{schema}`")
+            cur.execute(f"USE `{schema}`")
+            for stmt in (
+                "CREATE TABLE genefam (genefam_id INT PRIMARY KEY, assigned_id VARCHAR(28), taxon_id INT)",
+                "CREATE TABLE gene_has_xrefs (genefam_id INT, xref_id INT)",
+                "CREATE TABLE xref (id INT PRIMARY KEY, external_db_id INT, xref VARCHAR(255))",
+                "CREATE TABLE database_resource (id INT PRIMARY KEY, db_name VARCHAR(128))",
+                "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, db_id_a VARCHAR(255), vgnc_b VARCHAR(28))",
+            ):
+                cur.execute(stmt)
+
+            # VGNC:59454-like setup: normal xrefs exist, but no hgnc_ortholog xref
+            # row. HGNC id exists only in genefam_orthologs.
+            cur.execute(
+                "INSERT INTO genefam VALUES (63410, 'VGNC:59454', 9685)"
+            )
+            cur.executemany(
+                "INSERT INTO database_resource VALUES (%s, %s)",
+                [(2, "ncbi_gene"), (25, "hgnc_ortholog")],
+            )
+            cur.execute(
+                "INSERT INTO xref VALUES (1, 2, '101088636')"
+            )
+            cur.execute(
+                "INSERT INTO gene_has_xrefs VALUES (63410, 1)"
+            )
+            cur.execute(
+                "INSERT INTO genefam_orthologs VALUES (1, 9606, 9685, 'HGNC:20', 'VGNC:59454')"
+            )
+            conn.commit()
+            yield conn
+        finally:
+            cur.execute(f"DROP DATABASE IF EXISTS `{schema}`")
+            cur.close()
+            conn.close()
+
+    def test_falls_back_to_genefam_orthologs_when_xref_missing(
+        self, mysql_xrefs_schema: object
+    ) -> None:
+        from vgnc_download_file_generator.database.queries import (
+            compile_query_for_mysql,
+        )
+
+        cur = mysql_xrefs_schema.cursor()  # type: ignore[attr-defined]
+        query = build_xrefs_query(genefam_ids=[63410])
+        sql, params = compile_query_for_mysql(query)
+        cur.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        row = dict(zip(cols, cur.fetchone(), strict=False))
+        cur.close()
+
+        assert row["ncbi_gene_id"] == "101088636"
+        assert row["hgnc_orthologs"] == "HGNC:20"
 
 
 class TestBuildAliasesQuery:

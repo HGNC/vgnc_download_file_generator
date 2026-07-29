@@ -185,7 +185,7 @@ def build_gene_data_query(
 def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     """Build query for all external database references (xrefs).
 
-    Uses conditional aggregation to fetch all 6 xref types in a single query.
+    Uses conditional aggregation to fetch all xref fields in a single query.
 
     IMPORTANT: map by ``database_resource.db_name`` (stable semantic key)
     instead of hardcoded ``external_db_id`` integers, which can vary across DB
@@ -195,7 +195,9 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     - Ensembl Gene ID (db_name = ``ensembl_gene``)
     - UniProt IDs (db_name = ``uniprot_protein``) -- one gene may have several
     - PubMed ID (db_name = ``pubmed``)
-    - HGNC Orthologs (db_name = ``hgnc_ortholog``)
+    - HGNC Orthologs (prefer db_name = ``hgnc_ortholog`` xrefs; fall back to
+      ``genefam_orthologs.db_id_a`` for genes where the ortholog section exists
+      but the xref row is missing)
     - BGD ID (db_name = ``bgd_gene``)
     - HORDE ID (db_name = ``horde``)
 
@@ -229,12 +231,20 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
                 DISTINCT CASE WHEN dr.db_name = 'pubmed' THEN x.xref END
                 SEPARATOR '|'
             ) AS pubmed_id,
-            MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END) AS hgnc_orthologs,
+            COALESCE(
+                MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END),
+                MAX(CASE WHEN go.db_id_a LIKE 'HGNC:%%' THEN go.db_id_a END)
+            ) AS hgnc_orthologs,
             MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id,
             MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id
         FROM gene_has_xrefs ghx
         JOIN xref x ON ghx.xref_id = x.id
         JOIN database_resource dr ON x.external_db_id = dr.id
+        JOIN genefam gf ON ghx.genefam_id = gf.genefam_id
+        LEFT JOIN genefam_orthologs go
+            ON go.vgnc_b = gf.assigned_id
+            AND go.taxon_b = gf.taxon_id
+            AND go.taxon_a = 9606
     """
 
     if genefam_ids:
