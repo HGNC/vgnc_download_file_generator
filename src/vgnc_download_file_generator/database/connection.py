@@ -7,7 +7,7 @@ This module provides a connection manager for MySQL databases using mysqlclient
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import MySQLdb
 from sqlalchemy.pool import PoolProxiedConnection, QueuePool
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def _retry_on_mysql_error(
     max_attempts: int = 3,
     delays: tuple[int, ...] = (1, 2),
-) -> Callable[[Callable[[], Any]], Any]:
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to retry MySQL connection on specific errors with exponential backoff.
 
     Args:
@@ -31,7 +31,7 @@ def _retry_on_mysql_error(
         Decorator function
     """
 
-    def decorator(func: Callable[[], Any]) -> Callable[[], Any]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: MySQLdb.OperationalError | MySQLdb.ProgrammingError | None = None
 
@@ -212,7 +212,7 @@ class DatabaseConnection:
 
         conn = self.get_connection()
         cursor = conn.cursor(MySQLdb.cursors.SSCursor)
-        cursor._proxy_connection = conn
+        cast(Any, cursor)._proxy_connection = conn
         logger.info("Created server-side cursor for streaming")
         return cursor
 
@@ -230,7 +230,7 @@ class DatabaseConnection:
         """
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor._proxy_connection = conn
+        cast(Any, cursor)._proxy_connection = conn
         logger.info("Created regular cursor")
         return cursor
 

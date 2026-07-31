@@ -63,7 +63,7 @@ class VgncWithdrawn(BaseFileGenerator):
         headers = self._STANDARD_HEADERS.copy()
 
         # Handle 'All' species - add TAXON_ID first
-        is_all_species = self.species.taxon_id == "All" or self.species.display_name == "All"  # type: ignore[comparison-overlap]
+        is_all_species = self.species.taxon_id == "All" or self.species.display_name == "All"
         if is_all_species:
             headers.insert(0, "TAXON_ID")
 
@@ -86,7 +86,7 @@ class VgncWithdrawn(BaseFileGenerator):
         Yields:
             Iterator of lists, each up to chunk_size mapped row dicts
         """
-        filters: dict[str, str | int | list[str]] = {
+        filters: dict[str, str | int | list[str] | list[int]] = {
             "status": ["Entry Withdrawn", "Symbol Withdrawn"]
         }
 

@@ -131,7 +131,7 @@ class VgncPublic(BaseFileGenerator):
         headers = self._STANDARD_HEADERS.copy()
 
         # Handle 'All' species - add taxon_id first
-        is_all_species = self.species.taxon_id == "All" or self.species.display_name == "All"  # type: ignore[comparison-overlap]
+        is_all_species = self.species.taxon_id == "All" or self.species.display_name == "All"
         if is_all_species:
             headers.insert(0, "taxon_id")
 
@@ -162,7 +162,7 @@ class VgncPublic(BaseFileGenerator):
         """
         from vgnc_download_file_generator.validation import make_validator
 
-        filters: dict[str, str | int | list[str]] = {}
+        filters: dict[str, str | int | list[str] | list[int]] = {}
 
         if isinstance(self.species.taxon_id, int):
             filters["taxon_id"] = self.species.taxon_id

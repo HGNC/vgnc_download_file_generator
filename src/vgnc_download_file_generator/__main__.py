@@ -225,18 +225,18 @@ def main(
 
         # Parse species and get display name from database
         if species.lower() == "all":
-            species_id: int | str = "All"
+            parsed_species_id: int | str = "All"
             display_name = "All"
         else:
             try:
-                species_id = int(species)
+                parsed_species_id = int(species)
                 # Query database for actual species display name
                 from vgnc_download_file_generator.database.queries import (
                     build_species_display_name_query,
                     compile_query_for_mysql,
                 )
 
-                query = build_species_display_name_query(species_id)
+                query = build_species_display_name_query(parsed_species_id)
                 cursor = db.get_streaming_cursor()
                 sql, params = compile_query_for_mysql(query)
                 cursor.execute(sql, params)
@@ -246,14 +246,14 @@ def main(
                 if result and result[0]:
                     display_name = result[0]
                 else:
-                    console.print(f"[yellow]Warning: Species ID {species_id} not found in database. Using taxon_id as display name.[/yellow]")
-                    display_name = f"taxon_id_{species_id}"
+                    console.print(f"[yellow]Warning: Species ID {parsed_species_id} not found in database. Using taxon_id as display name.[/yellow]")
+                    display_name = f"taxon_id_{parsed_species_id}"
             except ValueError:
                 console.print(f"[red]Error: Invalid species ID '{species}'. Must be a number or 'All'[/red]")
                 sys.exit(1)
 
         # Create species info with actual display name from database
-        species_info = SpeciesInfo(taxon_id=species_id, display_name=display_name, is_live="Y")
+        species_info = SpeciesInfo(taxon_id=parsed_species_id, display_name=display_name, is_live="Y")
 
         # Create the appropriate generator
         generator_class: type[BaseFileGenerator]

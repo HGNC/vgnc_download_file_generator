@@ -18,7 +18,7 @@ _GENE_FROM_JOINS_WHERE = 'FROM genefam gf\n        LEFT JOIN gene_has_locus_type
 
 
 def _apply_gene_filters(
-    filters: dict[str, str | int | list[str]] | None,
+    filters: dict[str, str | int | list[str] | list[int]] | None,
 ) -> tuple[list[str], dict[str, str | int | tuple[str | int, ...]]]:
     """Build the WHERE-clause fragments + bind params shared by the gene queries.
 
@@ -102,7 +102,7 @@ def _gene_bindparams(
 
 def _assemble_gene_query(
     select_clause: str,
-    filters: dict[str, str | int | list[str]] | None,
+    filters: dict[str, str | int | list[str] | list[int]] | None,
     extra_where: list[str] | None = None,
     extra_params: dict[str, str | int | tuple[str | int, ...]] | None = None,
     trailing_sql: str = "",
@@ -139,7 +139,7 @@ def _assemble_gene_query(
 
 
 def build_gene_data_query(
-    filters: dict[str, str | int | list[str]] | None = None,
+    filters: dict[str, str | int | list[str] | list[int]] | None = None,
     genefam_ids: list[int] | None = None,
 ) -> TextClause:
     """Build main gene data query with core joins only.
@@ -173,7 +173,7 @@ def build_gene_data_query(
 
 
 def build_gene_id_page_query(
-    filters: dict[str, str | int | list[str]] | None = None,
+    filters: dict[str, str | int | list[str] | list[int]] | None = None,
     after_genefam_id: int | None = None,
     limit: int | None = None,
 ) -> TextClause:

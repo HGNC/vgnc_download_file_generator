@@ -5,6 +5,7 @@ No .env files, no Secret Manager client — secrets are mounted as env vars.
 """
 
 import os
+from typing import cast
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -72,7 +73,7 @@ def get_settings() -> AppConfig:
     dbhost = os.environ.get("DB_HOST", "")
     dbuser = os.environ.get("DB_USER", "")
     dbpasswd = os.environ.get("DB_PASSWORD", "")
-    dbport = os.environ.get("DB_PORT", "3306")
+    dbport: int | str = os.environ.get("DB_PORT", "3306")
     dbname = os.environ.get("DB_NAME", "")
 
     bucket_name = os.environ.get("GCS_BUCKET", "")
@@ -84,7 +85,7 @@ def get_settings() -> AppConfig:
             dbhost=dbhost,
             dbuser=dbuser,
             dbpasswd=dbpasswd,
-            dbport=dbport,
+            dbport=cast(int, dbport),
             dbname=dbname,
         ),
         gcs=GCSConfig(

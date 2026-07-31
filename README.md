@@ -192,6 +192,13 @@ If `mysqlclient` fails to find `libmysqlclient` on macOS:
 python scripts/fix_mysqlclient.py
 ```
 
+
+## Operational documentation
+
+- [Changelog](CHANGELOG.md)
+- [Rollback plan](docs/ROLLBACK_PLAN.md)
+- [Architecture decisions](docs/adr/README.md)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

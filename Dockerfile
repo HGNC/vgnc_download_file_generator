@@ -8,12 +8,12 @@ RUN pip install uv
 
 WORKDIR /app
 
-COPY vgnc-download-files/pyproject.toml vgnc-download-files/uv.lock vgnc-download-files/README.md ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
-COPY vgnc-download-files/src/ src/
-COPY vgnc-download-files/db_query_helper.py ./
-COPY vgnc-download-files/entrypoint.sh ./
+COPY src/ src/
+COPY db_query_helper.py ./
+COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]

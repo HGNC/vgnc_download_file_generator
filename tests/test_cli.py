@@ -59,7 +59,8 @@ class TestCLIArgumentParsing:
         runner = CliRunner()
         result = runner.invoke(main, ["--species", "9913", "--chromosome", "X", "--dry-run"])
         assert result.exit_code != 0
-        assert "No such option: --chromosome" in result.output
+        assert "No such option" in result.output
+        assert "--chromosome" in result.output
 
     def test_accepts_locus_type_option(self) -> None:
         """Test that --locus-type option is accepted."""

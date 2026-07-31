@@ -12,6 +12,7 @@ from contextlib import contextmanager, suppress
 from functools import wraps
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from google.api_core.exceptions import (
     DeadlineExceeded,
@@ -30,7 +31,7 @@ def retry_with_exponential_backoff(
     max_retries: int = 3,
     initial_backoff: int = 1,
     multiplier: int = 2,
-) -> Callable:
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator for retrying operations with exponential backoff.
 
     Args:
@@ -42,7 +43,7 @@ def retry_with_exponential_backoff(
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: Exception | None = None
@@ -212,10 +213,7 @@ class GCSStreamWriter:
         # since GCS blob.open() doesn't support transparent gzip compression
         if compress:
             # Open blob in binary mode for direct upload
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".gz") as tmp_file:
-                tmp_path = tmp_file.name
+            tmp_path = f"/tmp/vgnc-gcs-{uuid4().hex}.gz"
 
             success = False
             try:

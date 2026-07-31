@@ -92,7 +92,7 @@ class VgncEnsembl(BaseFileGenerator):
         """
         from vgnc_download_file_generator.validation import make_validator
 
-        filters: dict[str, str | int | list[str]] = {"status": "Approved"}
+        filters: dict[str, str | int | list[str] | list[int]] = {"status": "Approved"}
 
         if isinstance(self.species.taxon_id, int):
             filters["taxon_id"] = self.species.taxon_id

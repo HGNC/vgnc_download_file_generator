@@ -24,6 +24,8 @@ WITHDRAWN_STATUS_IDS: list[int] = [2, 3]
 
 logger = logging.getLogger(__name__)
 
+FilterValue = str | int | list[str] | list[int]
+
 
 class BaseFileGenerator(ABC):
     """Abstract base class for file generators.
@@ -96,7 +98,7 @@ class BaseFileGenerator(ABC):
 
     def _paginate_gene_stream(
         self,
-        filters: dict[str, "str | int | list[str]"],
+        filters: dict[str, FilterValue],
         column_map: dict[str, str],
         chunk_size: int = 5000,
         batch_size: int = 5000,

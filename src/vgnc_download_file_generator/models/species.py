@@ -17,6 +17,6 @@ class SpeciesInfo:
         is_live: Species status from the database (Y/N/C/T/F)
     """
 
-    taxon_id: int
+    taxon_id: int | str
     display_name: str
     is_live: str
