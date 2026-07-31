@@ -72,37 +72,26 @@ class VgncWithdrawn(BaseFileGenerator):
     def stream_rows(
         self, chunk_size: int = 5000, batch_size: int = 5000
     ) -> Iterator[list[dict[str, Any]]]:
-        """Stream rows from the database in chunks.
+        """Stream withdrawn-status rows in keyset-paginated batches.
 
-        Filters for withdrawn status genes only:
-        - Entry Withdrawn
-        - Symbol Withdrawn
-
-        Uses batched split query architecture to bound memory usage.
+        Filters to withdrawn statuses only (Entry Withdrawn, Symbol Withdrawn)
+        and delegates to :meth:`BaseFileGenerator._paginate_gene_stream` -- the
+        drop-safe pagination that replaced the old single long-lived
+        server-side cursor (which Cloud SQL dropped mid-stream).
 
         Args:
             chunk_size: Number of mapped rows to yield per chunk (default: 5000)
-            batch_size: Number of gene rows to process per sub-query batch (default: 5000)
+            batch_size: Number of distinct gene ids fetched per DB page (default: 5000)
 
         Yields:
-            Iterator of lists, where each list contains up to chunk_size dictionaries
+            Iterator of lists, each up to chunk_size mapped row dicts
         """
-        from vgnc_download_file_generator.database.queries import (
-            compile_query_for_mysql,
-        )
-        from vgnc_download_file_generator.database.queries_split import (
-            build_gene_data_query,
-            fetch_sub_data_for_batch,
-            merge_gene_results,
-        )
-
         filters: dict[str, str | int | list[str]] = {
             "status": ["Entry Withdrawn", "Symbol Withdrawn"]
         }
 
         if isinstance(self.species.taxon_id, int):
             filters["taxon_id"] = self.species.taxon_id
-
 
         if self.locus_group is not None:
             filters["locus_group"] = self.locus_group
@@ -112,50 +101,10 @@ class VgncWithdrawn(BaseFileGenerator):
 
         filters["status_id"] = WITHDRAWN_STATUS_IDS
 
-        column_map = self._get_column_map()
+        yield from self._paginate_gene_stream(
+            filters, self._get_column_map(), chunk_size, batch_size
+        )
 
-        gene_query = build_gene_data_query(filters=filters if filters else None)
-        gene_cursor = self.db.get_streaming_cursor()
-        gene_sql, gene_params = compile_query_for_mysql(gene_query)
-        gene_cursor.execute(gene_sql, gene_params)
-
-        db_headers = [desc[0] for desc in gene_cursor.description] if gene_cursor.description else []
-
-        sub_cursor = self.db.get_cursor()
-        output_chunk: list[dict[str, Any]] = []
-        gene_batch: list[dict[str, Any]] = []
-
-        try:
-            for row in gene_cursor:
-                row_dict = dict(zip(db_headers, row, strict=False))
-                gene_batch.append(row_dict)
-
-                if len(gene_batch) >= batch_size:
-                    for mapped_row in self._process_batch(
-                        gene_batch, sub_cursor, column_map, compile_query_for_mysql,
-                        fetch_sub_data_for_batch, merge_gene_results,
-                    ):
-                        output_chunk.append(mapped_row)
-                        if len(output_chunk) >= chunk_size:
-                            yield output_chunk
-                            output_chunk = []
-                    gene_batch = []
-
-            if gene_batch:
-                for mapped_row in self._process_batch(
-                    gene_batch, sub_cursor, column_map, compile_query_for_mysql,
-                    fetch_sub_data_for_batch, merge_gene_results,
-                ):
-                    output_chunk.append(mapped_row)
-                    if len(output_chunk) >= chunk_size:
-                        yield output_chunk
-                        output_chunk = []
-        finally:
-            sub_cursor.close()
-            gene_cursor.close()
-
-        if output_chunk:
-            yield output_chunk
 
     @staticmethod
     def _process_batch(
