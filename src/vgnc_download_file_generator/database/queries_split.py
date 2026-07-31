@@ -7,11 +7,32 @@ This approach provides 2300x performance improvement by avoiding the
 expensive CROSS JOIN behavior of multiple LEFT JOINs with complex conditions.
 """
 
+import logging
+import os
+import re
 from collections.abc import Iterator
 from typing import Any
 
+import MySQLdb
 from sqlalchemy import bindparam
 from sqlalchemy.sql.expression import TextClause, text
+
+logger = logging.getLogger(__name__)
+
+# Module-level cache for HGNC symbol fallback table resolution
+# False = not yet checked, None = checked but not found, str = resolved table reference
+_HGNC_SYMBOL_TABLE_CACHE: str | None | bool = False
+
+
+def clear_hgnc_symbol_table_cache() -> None:
+    """Reset the HGNC symbol table cache for test isolation.
+
+    The cache persists at module level for the lifetime of the process.
+    Call this in test setup/teardown to ensure each test starts with a
+    clean resolution state.
+    """
+    global _HGNC_SYMBOL_TABLE_CACHE
+    _HGNC_SYMBOL_TABLE_CACHE = False
 
 _GENE_DATA_SELECT = '\n        SELECT DISTINCT\n            gf.genefam_id,\n            gf.taxon_id,\n            gf.assigned_id,\n            gf.assigned_symbol,\n            gf.assigned_name,\n            gs.status AS gene_status,\n            lt.type AS locus_type,\n            lg.name AS locus_group,\n            c.display_name AS chromosome,\n            gl.start,\n            gl.end,\n            gl.strand,\n            gl.band,\n            fn.id AS gene_family_id,\n            fn.name AS gene_family'
 _GENE_FROM_JOINS_WHERE = 'FROM genefam gf\n        LEFT JOIN gene_has_locus_type ghtlt ON gf.genefam_id = ghtlt.genefam_id\n        LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id\n        LEFT JOIN locus_group lg ON lt.locus_group_id = lg.id\n        LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id\n            AND ghl.location_id = (\n                SELECT ghl_pick.location_id\n                FROM gene_has_location ghl_pick\n                JOIN gene_location gl_pick ON gl_pick.id = ghl_pick.location_id\n                JOIN chromosomes c_pick ON c_pick.chr_id = gl_pick.chr_id\n                LEFT JOIN assembly a_pick ON a_pick.id = ghl_pick.assembly_id\n                WHERE ghl_pick.gene_id = gf.genefam_id\n                    AND c_pick.taxon_id = gf.taxon_id\n                    AND EXISTS (\n                        SELECT 1\n                        FROM assembly_has_chr ahc\n                        JOIN assembly a2 ON a2.id = ahc.assembly_id\n                        WHERE ahc.chr_id = c_pick.chr_id\n                            AND a2.is_vgnc_default = 1\n                            AND a2.taxon_id = gf.taxon_id\n                    )\n                ORDER BY\n                    CASE\n                        WHEN a_pick.is_vgnc_default = 1 THEN 0\n                        ELSE 1\n                    END,\n                    CASE\n                        WHEN a_pick.is_current = 1 THEN 0\n                        ELSE 1\n                    END,\n                    a_pick.id DESC,\n                    ghl_pick.location_id DESC\n                LIMIT 1\n            )\n        LEFT JOIN gene_location gl ON ghl.location_id = gl.id\n        LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id\n            AND c.taxon_id = gf.taxon_id\n        LEFT JOIN gene_status gs ON gf.status_id = gs.id\n        LEFT JOIN gene_has_family ghf ON gf.genefam_id = ghf.genefam_id\n        LEFT JOIN family_new fn ON ghf.family_id = fn.id\n        WHERE 1=1\n    '
@@ -225,7 +246,9 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     - Ensembl Gene ID (db_name = ``ensembl_gene``)
     - UniProt IDs (db_name = ``uniprot_protein``) -- one gene may have several
     - PubMed ID (db_name = ``pubmed``)
-    - HGNC Orthologs (prefer db_name = ``hgnc_ortholog`` xrefs; fall back to
+    - HGNC Orthologs (prefer HGNC xrefs from db_name in
+      ``('hgnc_gene', 'hgnc_ortholog')`` and preserve multiple IDs with
+      ``GROUP_CONCAT``; fall back to
       ``genefam_orthologs.db_id_a`` for genes where the ortholog section exists
       but the xref row is missing). The fallback join uses the indexed
       ``genefam_id_b`` FK (``go.genefam_id_b = ghx.genefam_id``) with
@@ -258,15 +281,28 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
             MAX(CASE WHEN dr.db_name = 'ensembl_gene' THEN x.xref END) AS ensembl_gene_id,
             GROUP_CONCAT(
                 DISTINCT CASE WHEN dr.db_name = 'uniprot_protein' THEN x.xref END
+                ORDER BY x.xref
                 SEPARATOR '|'
             ) AS uniprot_ids,
             GROUP_CONCAT(
                 DISTINCT CASE WHEN dr.db_name = 'pubmed' THEN x.xref END
+                ORDER BY x.xref
                 SEPARATOR '|'
             ) AS pubmed_id,
             COALESCE(
-                MAX(CASE WHEN dr.db_name = 'hgnc_ortholog' THEN x.xref END),
-                MAX(CASE WHEN go.db_id_a LIKE 'HGNC:%%' THEN go.db_id_a END)
+                NULLIF(
+                    GROUP_CONCAT(
+                        DISTINCT CASE WHEN dr.db_name IN ('hgnc_gene', 'hgnc_ortholog') THEN x.xref END
+                        ORDER BY x.xref
+                        SEPARATOR '|'
+                    ),
+                    ''
+                ),
+                GROUP_CONCAT(
+                    DISTINCT CASE WHEN go.db_id_a LIKE 'HGNC:%%' THEN go.db_id_a END
+                    ORDER BY go.db_id_a
+                    SEPARATOR '|'
+                )
             ) AS hgnc_orthologs,
             MAX(CASE WHEN dr.db_name = 'bgd_gene' THEN x.xref END) AS bgd_id,
             MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id
@@ -486,6 +522,233 @@ def build_dates_query(genefam_ids: list[int] | None = None) -> TextClause:
     return query
 
 
+def _quote_identifier(identifier: str) -> str:
+    """Return a safely backtick-quoted SQL identifier (db/table name)."""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", identifier):
+        raise ValueError(f"invalid SQL identifier: {identifier!r}")
+    return f"`{identifier}`"
+
+
+def _format_hgnc_table_reference(table_reference: str) -> str:
+    """Format ``table`` or ``db.table`` into a safely quoted SQL reference."""
+    parts = [p for p in table_reference.strip().split('.') if p]
+    if len(parts) == 1:
+        return _quote_identifier(parts[0])
+    if len(parts) == 2:
+        return f"{_quote_identifier(parts[0])}.{_quote_identifier(parts[1])}"
+    raise ValueError(f"invalid table reference: {table_reference!r}")
+
+
+def _hgnc_table_exists(cursor: Any, quoted_table: str) -> bool:
+    """Check if a quoted table (e.g. `pub_hgnc` or `db`.`table`) exists.
+
+    Args:
+        cursor: Database cursor for executing the existence check
+        quoted_table: Backtick-quoted table reference (single or two-part)
+
+    Returns:
+        True if the table exists and is accessible; False otherwise
+    """
+    try:
+        # Use LIMIT 0 to verify table exists without fetching data
+        cursor.execute(f"SELECT 1 FROM {quoted_table} LIMIT 0")
+        cursor.fetchall()  # Consume any results
+        return True
+    except (MySQLdb.OperationalError, MySQLdb.ProgrammingError):
+        return False
+
+
+def _resolve_hgnc_symbol_fallback_table(cursor: Any) -> str | None:
+    """Resolve the SQL table used for exact-symbol HGNC fallback.
+
+    Uses module-level caching to avoid repeated metadata queries per batch.
+    Resolution order:
+    1) ``HGNC_SYMBOL_FALLBACK_TABLE`` env var (``table`` or ``db.table``) -
+       validated for existence; warns and falls back if explicitly set but missing.
+    2) ``pub_hgnc`` in the current DB schema.
+    3) Latest visible ``g4public[_YYYY_MM_DD].pub_hgnc`` schema.
+
+    Returns:
+        Backtick-quoted SQL table reference, or ``None`` when unavailable.
+    """
+    global _HGNC_SYMBOL_TABLE_CACHE
+
+    # Return cached result if already resolved in this run
+    if _HGNC_SYMBOL_TABLE_CACHE is not False:
+        return _HGNC_SYMBOL_TABLE_CACHE  # type: ignore[return-value]
+
+    # 1) Check for explicit override via environment
+    override = os.environ.get("HGNC_SYMBOL_FALLBACK_TABLE", "").strip()
+    if override:
+        try:
+            quoted = _format_hgnc_table_reference(override)
+        except ValueError:
+            logger.warning(
+                "HGNC_SYMBOL_FALLBACK_TABLE=%r is not a valid SQL identifier; "
+                "falling back to auto-detection",
+                override,
+            )
+            quoted = None
+
+        if quoted:
+            if _hgnc_table_exists(cursor, quoted):
+                _HGNC_SYMBOL_TABLE_CACHE = quoted
+                return quoted
+            logger.warning(
+                "HGNC_SYMBOL_FALLBACK_TABLE=%r resolved to table=%r which does "
+                "not exist or is not accessible; falling back to auto-detection",
+                override,
+                quoted,
+            )
+
+    # 2) Check current schema for pub_hgnc
+    try:
+        cursor.execute("SHOW TABLES LIKE 'pub_hgnc'")
+        if cursor.fetchone():
+            # Double-check the table is actually queryable
+            quoted = _quote_identifier("pub_hgnc")
+            if _hgnc_table_exists(cursor, quoted):
+                _HGNC_SYMBOL_TABLE_CACHE = quoted
+                return quoted
+    except (MySQLdb.OperationalError, MySQLdb.ProgrammingError) as exc:
+        logger.debug(
+            "HGNC symbol fallback detection: SHOW TABLES query failed; "
+            "continuing to information_schema path: %s",
+            exc,
+        )
+
+    # 3) Check information_schema for g4public*.pub_hgnc
+    try:
+        cursor.execute(
+            """
+            SELECT table_schema
+            FROM information_schema.tables
+            WHERE table_name = 'pub_hgnc'
+              AND table_schema REGEXP '^g4public(_[0-9]{4}_[0-9]{2}_[0-9]{2})?$'
+            ORDER BY
+              CASE
+                WHEN table_schema REGEXP '^g4public_[0-9]{4}_[0-9]{2}_[0-9]{2}$' THEN 0
+                WHEN table_schema = 'g4public' THEN 1
+                ELSE 2
+              END,
+              table_schema DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            schema_name = str(row[0])
+            quoted = f"{_quote_identifier(schema_name)}.{_quote_identifier('pub_hgnc')}"
+            if _hgnc_table_exists(cursor, quoted):
+                _HGNC_SYMBOL_TABLE_CACHE = quoted
+                return quoted
+    except (MySQLdb.OperationalError, MySQLdb.ProgrammingError) as exc:
+        logger.debug(
+            "HGNC symbol fallback detection: information_schema query failed: %s",
+            exc,
+        )
+
+    # Resolution failed - cache None and log at info level for observability
+    logger.info(
+        "HGNC symbol fallback disabled: no accessible pub_hgnc table found; "
+        "hgnc_orthologs will only come from xrefs (hgnc_gene/hgnc_ortholog) and genefam_orthologs"
+    )
+    _HGNC_SYMBOL_TABLE_CACHE = None
+    return None
+
+
+def _validate_hgnc_symbol_table(quoted_table: str) -> None:
+    """Validate that a string is a properly backtick-quoted SQL identifier.
+
+    Used for defense-in-depth validation of the hgnc_symbol_table parameter
+    before SQL interpolation.
+
+    Args:
+        quoted_table: Backtick-quoted table reference (`table` or `db`.`table`)
+
+    Raises:
+        ValueError: If the format is invalid
+    """
+    if not quoted_table or not isinstance(quoted_table, str):
+        raise ValueError(f"hgnc_symbol_table must be a non-empty string: {quoted_table!r}")
+    
+    # Acceptable formats: `table` or `db`.`table`
+    # Check it starts and ends with backtick
+    if not (quoted_table.startswith("`") and quoted_table.endswith("`")):
+        raise ValueError(f"hgnc_symbol_table must be properly backtick-quoted: {quoted_table!r}")
+    
+    # Validate content using _format_hgnc_table_reference on the unquoted value
+    # Strip outer backticks
+    inner = quoted_table[1:-1]
+    # Handle db`.`table format (split on `.[` to find the separator)
+    if "`.`" in inner:
+        # Format: `db`.`table` -> inner = db`.`table
+        db_part, table_part = inner.split("`.`", 1)
+        _quote_identifier(db_part)  # Validate each part
+        _quote_identifier(table_part)
+    else:
+        # Single table name
+        _quote_identifier(inner)
+
+
+def _build_hgnc_symbol_fallback_query(
+    genefam_ids: list[int],
+    *,
+    hgnc_symbol_table: str,
+) -> TextClause:
+    """Build exact-HGNC-symbol fallback query (website step 3 parity).
+
+    Matches VGNC ``assigned_symbol`` to HGNC ``gd_app_sym`` and returns
+    pipe-delimited HGNC IDs per gene.
+
+    Args:
+        genefam_ids: List of genefam_ids to filter
+        hgnc_symbol_table: Pre-validated, safely backtick-quoted table reference
+
+    Returns:
+        SQLAlchemy TextClause with bind parameters
+    """
+    # Defense-in-depth validation
+    _validate_hgnc_symbol_table(hgnc_symbol_table)
+
+    sql = f"""
+        SELECT
+            gf.genefam_id,
+            GROUP_CONCAT(DISTINCT CONCAT('HGNC:', ph.gd_hgnc_id) ORDER BY ph.gd_hgnc_id SEPARATOR '|') AS hgnc_orthologs
+        FROM genefam gf
+        JOIN {hgnc_symbol_table} ph ON ph.gd_app_sym = gf.assigned_symbol
+        WHERE gf.genefam_id IN :genefam_ids
+        GROUP BY gf.genefam_id
+    """
+
+    return text(sql).bindparams(
+        bindparam("genefam_ids", value=tuple(genefam_ids), expanding=True)
+    )
+
+
+def _pipe_values(value: Any) -> list[str]:
+    """Split a pipe-delimited value into non-empty tokens."""
+    if value is None:
+        return []
+    return [token for token in str(value).split("|") if token]
+
+
+def _merge_pipe_values(primary: Any, secondary: Any) -> str | None:
+    """Merge two pipe-delimited values, preserving order and removing duplicates.
+
+    Primary values (from xrefs/orthologs) come before secondary (symbol fallback).
+    """
+    merged: list[str] = []
+    seen: set[str] = set()
+
+    for token in _pipe_values(primary) + _pipe_values(secondary):
+        if token not in seen:
+            seen.add(token)
+            merged.append(token)
+
+    return "|".join(merged) if merged else None
+
+
 def fetch_sub_data_for_batch(
     genefam_ids: list[int],
     cursor: Any,
@@ -504,12 +767,55 @@ def fetch_sub_data_for_batch(
 
     Returns:
         Tuple of (xrefs, aliases, dates) lists
+
+    Raises:
+        MySQLdb.OperationalError: If the HGNC symbol fallback query fails with an
+            operational error (connection issue, etc.). The error is re-raised to
+            enforce fail-fast behavior since silent degradation would ship
+            incomplete HGNC ortholog data that breaks website parity.
+        MySQLdb.ProgrammingError: If the HGNC symbol fallback query fails with a
+            programming error (schema mismatch, missing column, etc.). Re-raised
+            to catch schema bugs early rather than silently shipping incomplete data.
     """
     xrefs_query = build_xrefs_query(genefam_ids=genefam_ids)
     xrefs_sql, xrefs_params = compile_fn(xrefs_query)
     cursor.execute(xrefs_sql, xrefs_params)
     xrefs_db_headers = [desc[0] for desc in cursor.description] if cursor.description else []
     xrefs = [dict(zip(xrefs_db_headers, row, strict=False)) for row in cursor]
+
+    # Website parity fallback (step 3): exact HGNC symbol match.
+    # This is additive + deduplicated, mirroring website behavior where symbol
+    # matches can add a human homolog not already seen from xrefs / ortholog rows.
+    hgnc_symbol_table = _resolve_hgnc_symbol_fallback_table(cursor)
+    if hgnc_symbol_table:
+        symbol_query = _build_hgnc_symbol_fallback_query(
+            genefam_ids,
+            hgnc_symbol_table=hgnc_symbol_table,
+        )
+        symbol_sql, symbol_params = compile_fn(symbol_query)
+        cursor.execute(symbol_sql, symbol_params)
+        symbol_headers = [desc[0] for desc in cursor.description] if cursor.description else []
+        symbol_rows = [dict(zip(symbol_headers, row, strict=False)) for row in cursor]
+
+        xrefs_by_gene = {row["genefam_id"]: row for row in xrefs}
+        for row in symbol_rows:
+            genefam_id = row["genefam_id"]
+            symbol_hgnc = row.get("hgnc_orthologs")
+            if not symbol_hgnc:
+                continue
+
+            existing = xrefs_by_gene.get(genefam_id)
+            if existing is None:
+                xrefs_by_gene[genefam_id] = {
+                    "genefam_id": genefam_id,
+                    "hgnc_orthologs": symbol_hgnc,
+                }
+            else:
+                existing["hgnc_orthologs"] = _merge_pipe_values(
+                    existing.get("hgnc_orthologs"), symbol_hgnc
+                )
+
+        xrefs = list(xrefs_by_gene.values())
 
     aliases_query = build_aliases_query(genefam_ids=genefam_ids)
     aliases_sql, aliases_params = compile_fn(aliases_query)

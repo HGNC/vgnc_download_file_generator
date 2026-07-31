@@ -43,6 +43,7 @@ All configuration is provided via environment variables injected by Cloud Run:
 | `VGNC_FORMATS` | Output formats | `tsv,json` |
 | `VGNC_VALIDATION_MODE` | ID-format validation: `strict` (abort on bad IDs) or `warn` (log only) | `strict` |
 | `VGNC_VALIDATION_GRACE` | Max tolerated ID violations per field before aborting (strict mode) | `50` |
+| `HGNC_SYMBOL_FALLBACK_TABLE` | Optional symbol-fallback table for website parity (`pub_hgnc` or `db.table`) | auto-detect |
 
 ## Local development
 

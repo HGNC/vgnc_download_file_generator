@@ -14,6 +14,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Explicit rollback plan documentation (`docs/ROLLBACK_PLAN.md`).
 
 ### Changed
+- Aligned `hgnc_orthologs` export logic with website homolog behavior by accepting both
+  `hgnc_gene` and `hgnc_ortholog` xrefs, preserving multiple HGNC IDs in pipe-delimited
+  output, and adding exact HGNC-symbol fallback (website step 3) via `pub_hgnc` when available.
 - Replaced long-lived streaming cursor export with keyset-paginated short-lived DB pages
   to avoid Cloud SQL connection drops during long GCS uploads.
 - Re-keyed HGNC ortholog fallback join to indexed `genefam_id_b` path for performance and

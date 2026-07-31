@@ -203,10 +203,12 @@ class TestCodeAssumptionsMatchRealDictionary:
 # ===========================================================================
 
 # db_name -> (output column, 'single' uses MAX / 'multi' uses GROUP_CONCAT).
+# NOTE: build_xrefs_query routes both hgnc_gene and hgnc_ortholog into
+# hgnc_orthologs; _expected() folds hgnc_gene into the hgnc_ortholog bucket.
 _XREF_FIELD_FOR = {
     "ncbi_gene": ("ncbi_gene_id", "single"),
     "ensembl_gene": ("ensembl_gene_id", "single"),
-    "hgnc_ortholog": ("hgnc_orthologs", "single"),
+    "hgnc_ortholog": ("hgnc_orthologs", "multi"),
     "bgd_gene": ("bgd_id", "single"),
     "horde": ("horde_id", "single"),
     "uniprot_protein": ("uniprot_ids", "multi"),
@@ -256,7 +258,10 @@ class TestBuildXrefsQueryRealSnapshot:
         for gid, xid in cur.fetchall():
             gid, xid = int(gid), int(xid)
             value, db = xref[xid]
-            out.setdefault(gid, {}).setdefault(db_name[db], []).append(value)
+            key = db_name[db]
+            if key == "hgnc_gene":
+                key = "hgnc_ortholog"
+            out.setdefault(gid, {}).setdefault(key, []).append(value)
         cur.close()
         return out
 

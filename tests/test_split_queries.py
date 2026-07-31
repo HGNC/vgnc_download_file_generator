@@ -21,8 +21,21 @@ from vgnc_download_file_generator.database.queries_split import (
     build_gene_data_query,
     build_gene_id_page_query,
     build_xrefs_query,
+    clear_hgnc_symbol_table_cache,
+    fetch_sub_data_for_batch,
     merge_gene_results,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_hgnc_cache() -> Iterator[None]:
+    """Clear HGNC symbol table cache before each test for isolation.
+
+    Module-level cache pollution would cause tests to share resolved
+    table references even across ephemeral test databases.
+    """
+    clear_hgnc_symbol_table_cache()
+    yield
 
 
 class TestBuildGeneDataQuery:
@@ -519,14 +532,23 @@ class TestBuildXrefsQuery:
         sql = query.text
         assert "MAX(CASE WHEN dr.db_name = 'horde' THEN x.xref END) AS horde_id" in sql
 
-    def test_xrefs_hgnc_ortholog_uses_hgnc_ortholog_resource_name(self) -> None:
-        """HGNC ortholog mapping uses xref db_name with ortholog-table fallback."""
+    def test_xrefs_hgnc_ortholog_uses_hgnc_resource_names(self) -> None:
+        """HGNC ortholog mapping uses hgnc_gene/hgnc_ortholog xrefs with fallback."""
         query = build_xrefs_query()
         sql = query.text
-        assert "dr.db_name = 'hgnc_ortholog' THEN x.xref END" in sql
+        assert "dr.db_name IN ('hgnc_gene', 'hgnc_ortholog') THEN x.xref END" in sql
         assert "COALESCE(" in sql
         assert "JOIN genefam_orthologs go" in sql
         assert "go.db_id_a" in sql
+
+    def test_xrefs_hgnc_orthologs_uses_multi_value_aggregation(self) -> None:
+        """HGNC orthologs should retain multiple IDs (website parity)."""
+        query = build_xrefs_query()
+        sql = query.text
+        assert "GROUP_CONCAT" in sql
+        assert "dr.db_name IN ('hgnc_gene', 'hgnc_ortholog') THEN x.xref END" in sql
+        assert "MAX(CASE WHEN dr.db_name IN ('hgnc_gene', 'hgnc_ortholog') THEN x.xref END)" not in sql
+        assert "AS hgnc_orthologs" in sql
 
     def test_xrefs_joins_database_resource(self) -> None:
         """The query must join database_resource to resolve stable db_name values."""
@@ -592,11 +614,19 @@ class TestBuildXrefsQueryOrthologFallback:
             cur.execute(f"CREATE DATABASE `{schema}`")
             cur.execute(f"USE `{schema}`")
             for stmt in (
-                "CREATE TABLE genefam (genefam_id INT PRIMARY KEY, assigned_id VARCHAR(28), taxon_id INT)",
+                "CREATE TABLE genefam (genefam_id INT PRIMARY KEY, assigned_id VARCHAR(28), taxon_id INT, assigned_symbol VARCHAR(255))",
                 "CREATE TABLE gene_has_xrefs (genefam_id INT, xref_id INT)",
                 "CREATE TABLE xref (id INT PRIMARY KEY, external_db_id INT, xref VARCHAR(255))",
                 "CREATE TABLE database_resource (id INT PRIMARY KEY, db_name VARCHAR(128))",
+                "CREATE TABLE pub_hgnc (gd_hgnc_id INT PRIMARY KEY, gd_app_sym VARCHAR(255))",
                 "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, db_id_a VARCHAR(255), vgnc_b VARCHAR(28), genefam_id_b INT)",
+                "CREATE TABLE gene_alt_symbol (genefam_id INT, symbol_id INT)",
+                "CREATE TABLE alt_symbol (id INT PRIMARY KEY, symbol VARCHAR(255), nomenclature_type_id INT)",
+                "CREATE TABLE gene_alt_name (genefam_id INT, name_id INT)",
+                "CREATE TABLE alt_name (id INT PRIMARY KEY, name VARCHAR(255), nomenclature_type_id INT)",
+                "CREATE TABLE nomenclature_type (id INT PRIMARY KEY, type VARCHAR(255))",
+                "CREATE TABLE gene_history (genefam_id INT, date DATE, type_id INT)",
+                "CREATE TABLE change_type (id INT PRIMARY KEY, field_changed VARCHAR(255))",
             ):
                 cur.execute(stmt)
             # Create index on genefam_id_b (the index used by the re-keyed join).
@@ -610,24 +640,39 @@ class TestBuildXrefsQueryOrthologFallback:
             # row. HGNC id exists only in genefam_orthologs.
             # Gene 63410: has ortholog with vgnc_b set -> should backfill
             # Gene 63411: has ortholog with vgnc_b=NULL but genefam_id_b set -> should NOT backfill
+            # Gene 63412: has hgnc_gene xref only -> should still populate
             cur.executemany(
-                "INSERT INTO genefam VALUES (%s, %s, %s)",
+                "INSERT INTO genefam VALUES (%s, %s, %s, %s)",
                 [
-                    (63410, 'VGNC:59454', 9685),
-                    (63411, 'VGNC:59455', 9685),
+                    (63410, 'VGNC:59454', 9685, 'CATA'),
+                    (63411, 'VGNC:59455', 9685, 'CATB'),
+                    (63412, 'VGNC:59456', 9685, 'CATC'),
                 ],
             )
             cur.executemany(
                 "INSERT INTO database_resource VALUES (%s, %s)",
-                [(2, "ncbi_gene"), (25, "hgnc_ortholog")],
+                [(2, "ncbi_gene"), (14, "hgnc_gene"), (25, "hgnc_ortholog")],
             )
             cur.executemany(
                 "INSERT INTO xref VALUES (%s, %s, %s)",
-                [(1, 2, '101088636'), (2, 2, '101088637')],
+                [
+                    (1, 2, '101088636'),
+                    (2, 2, '101088637'),
+                    (3, 14, 'HGNC:99'),
+                    (4, 25, 'HGNC:100'),
+                ],
             )
             cur.executemany(
                 "INSERT INTO gene_has_xrefs VALUES (%s, %s)",
-                [(63410, 1), (63411, 2)],
+                [(63410, 1), (63411, 2), (63412, 3), (63412, 4)],
+            )
+            cur.executemany(
+                "INSERT INTO pub_hgnc VALUES (%s, %s)",
+                [
+                    (20, 'CATA'),
+                    (99, 'CATC'),
+                    (101, 'CATB'),
+                ],
             )
             # Ortholog for gene 63410: vgnc_b=VGNC:59454, genefam_id_b=63410 -> should match
             # Ortholog for gene 63411: vgnc_b=NULL, genefam_id_b=63411 -> should NOT match (excluded by vgnc_b IS NOT NULL)
@@ -655,7 +700,8 @@ class TestBuildXrefsQueryOrthologFallback:
         Gene 63410: ortholog row has vgnc_b='VGNC:59454', genefam_id_b=63410
             -> should get hgnc_orthologs='HGNC:20'
         Gene 63411: ortholog row has vgnc_b=NULL, genefam_id_b=63411
-            -> should NOT backfill (vgnc_b IS NOT NULL excludes it)
+            -> should NOT backfill from genefam_orthologs, but should fall back
+               by exact HGNC symbol match (website step 3)
 
         This test must stay green on both current HEAD and after the re-key:
         it enforces that the output set doesn't change.
@@ -665,20 +711,27 @@ class TestBuildXrefsQueryOrthologFallback:
         )
 
         cur = mysql_xrefs_schema.cursor()  # type: ignore[attr-defined]
-        query = build_xrefs_query(genefam_ids=[63410, 63411])
-        sql, params = compile_query_for_mysql(query)
-        cur.execute(sql, params)
-        cols = [d[0] for d in cur.description]
-        rows = {row[0]: dict(zip(cols, row, strict=False)) for row in cur.fetchall()}
+        xrefs, _aliases, _dates = fetch_sub_data_for_batch(
+            [63410, 63411, 63412],
+            cur,
+            compile_query_for_mysql,
+        )
+        rows = {row["genefam_id"]: row for row in xrefs}
         cur.close()
 
         # Gene 63410: vgnc_b is set -> should backfill
         assert rows[63410]["ncbi_gene_id"] == "101088636"
         assert rows[63410]["hgnc_orthologs"] == "HGNC:20"
 
-        # Gene 63411: vgnc_b is NULL -> should NOT backfill (preserves current behavior)
+        # Gene 63411: no xref/go fallback, but symbol fallback should populate.
         assert rows[63411]["ncbi_gene_id"] == "101088637"
-        assert rows[63411]["hgnc_orthologs"] is None
+        assert rows[63411]["hgnc_orthologs"] == "HGNC:101"
+
+        # Gene 63412: combine hgnc_gene + hgnc_ortholog xrefs.
+        assert {v for v in str(rows[63412]["hgnc_orthologs"] or "").split("|") if v} == {
+            "HGNC:99",
+            "HGNC:100",
+        }
 
     def test_ortholog_explain_access_path_uses_genefam_id_b(
         self, mysql_xrefs_schema: object
