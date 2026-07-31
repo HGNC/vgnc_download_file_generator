@@ -703,7 +703,7 @@ class TestBuildXrefsQueryOrthologFallback:
         )
         # Must NOT join on vgnc_b using equality (unindexed, causes full table scan)
         # "go.vgnc_b IS NOT NULL" is fine - it's a post-index predicate
-        assert "go.vgnc_b =" not in sql.replace(" ", ""), (
+        assert "go.vgnc_b=" not in sql.replace(" ", ""), (
             "build_xrefs_query() must NOT join on go.vgnc_b = ... (unindexed); "
             "use genefam_id_b instead. go.vgnc_b IS NOT NULL is allowed as a "
             "post-index predicate to preserve the current row set."
