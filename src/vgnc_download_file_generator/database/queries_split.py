@@ -227,7 +227,10 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
     - PubMed ID (db_name = ``pubmed``)
     - HGNC Orthologs (prefer db_name = ``hgnc_ortholog`` xrefs; fall back to
       ``genefam_orthologs.db_id_a`` for genes where the ortholog section exists
-      but the xref row is missing)
+      but the xref row is missing). The fallback join uses the indexed
+      ``genefam_id_b`` FK (``go.genefam_id_b = ghx.genefam_id``) with
+      ``go.vgnc_b IS NOT NULL`` to preserve the exact row set previously
+      matched by the unindexed ``go.vgnc_b = gf.assigned_id`` string join.
     - BGD ID (db_name = ``bgd_gene``)
     - HORDE ID (db_name = ``horde``)
 
@@ -270,11 +273,10 @@ def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:
         FROM gene_has_xrefs ghx
         JOIN xref x ON ghx.xref_id = x.id
         JOIN database_resource dr ON x.external_db_id = dr.id
-        JOIN genefam gf ON ghx.genefam_id = gf.genefam_id
         LEFT JOIN genefam_orthologs go
-            ON go.vgnc_b = gf.assigned_id
-            AND go.taxon_b = gf.taxon_id
+            ON go.genefam_id_b = ghx.genefam_id
             AND go.taxon_a = 9606
+            AND go.vgnc_b IS NOT NULL
     """
 
     if genefam_ids:

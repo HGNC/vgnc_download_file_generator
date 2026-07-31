@@ -61,7 +61,7 @@ _XREFS_DDL = _DICT_DDL + (
     "CREATE TABLE gene_has_xrefs (genefam_id INT, xref_id INT, created_by INT, "
     "curated INT, created DATE, modified DATE)",
     "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, "
-    "db_id_a VARCHAR(255), vgnc_b VARCHAR(28))",
+    "db_id_a VARCHAR(255), vgnc_b VARCHAR(28), genefam_id_b INT)",
 )
 # Includes the full dict DDL; change_type is populated from the dict fixture.
 _DATES_DDL = _DICT_DDL + (

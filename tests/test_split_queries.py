@@ -596,27 +596,49 @@ class TestBuildXrefsQueryOrthologFallback:
                 "CREATE TABLE gene_has_xrefs (genefam_id INT, xref_id INT)",
                 "CREATE TABLE xref (id INT PRIMARY KEY, external_db_id INT, xref VARCHAR(255))",
                 "CREATE TABLE database_resource (id INT PRIMARY KEY, db_name VARCHAR(128))",
-                "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, db_id_a VARCHAR(255), vgnc_b VARCHAR(28))",
+                "CREATE TABLE genefam_orthologs (go_id INT PRIMARY KEY, taxon_a INT, taxon_b INT, db_id_a VARCHAR(255), vgnc_b VARCHAR(28), genefam_id_b INT)",
             ):
                 cur.execute(stmt)
+            # Create index on genefam_id_b (the index used by the re-keyed join).
+            # In production this is genefam_orthologs_idx_genefam_id_b.
+            cur.execute(
+                "CREATE INDEX genefam_orthologs_idx_genefam_id_b "
+                "ON genefam_orthologs(genefam_id_b)"
+            )
 
             # VGNC:59454-like setup: normal xrefs exist, but no hgnc_ortholog xref
             # row. HGNC id exists only in genefam_orthologs.
-            cur.execute(
-                "INSERT INTO genefam VALUES (63410, 'VGNC:59454', 9685)"
+            # Gene 63410: has ortholog with vgnc_b set -> should backfill
+            # Gene 63411: has ortholog with vgnc_b=NULL but genefam_id_b set -> should NOT backfill
+            cur.executemany(
+                "INSERT INTO genefam VALUES (%s, %s, %s)",
+                [
+                    (63410, 'VGNC:59454', 9685),
+                    (63411, 'VGNC:59455', 9685),
+                ],
             )
             cur.executemany(
                 "INSERT INTO database_resource VALUES (%s, %s)",
                 [(2, "ncbi_gene"), (25, "hgnc_ortholog")],
             )
-            cur.execute(
-                "INSERT INTO xref VALUES (1, 2, '101088636')"
+            cur.executemany(
+                "INSERT INTO xref VALUES (%s, %s, %s)",
+                [(1, 2, '101088636'), (2, 2, '101088637')],
             )
-            cur.execute(
-                "INSERT INTO gene_has_xrefs VALUES (63410, 1)"
+            cur.executemany(
+                "INSERT INTO gene_has_xrefs VALUES (%s, %s)",
+                [(63410, 1), (63411, 2)],
             )
-            cur.execute(
-                "INSERT INTO genefam_orthologs VALUES (1, 9606, 9685, 'HGNC:20', 'VGNC:59454')"
+            # Ortholog for gene 63410: vgnc_b=VGNC:59454, genefam_id_b=63410 -> should match
+            # Ortholog for gene 63411: vgnc_b=NULL, genefam_id_b=63411 -> should NOT match (excluded by vgnc_b IS NOT NULL)
+            cur.executemany(
+                "INSERT INTO genefam_orthologs "
+                "(go_id, taxon_a, taxon_b, db_id_a, vgnc_b, genefam_id_b) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                [
+                    (1, 9606, 9685, 'HGNC:20', 'VGNC:59454', 63410),
+                    (2, 9606, 9685, 'HGNC:21', None, 63411),
+                ],
             )
             conn.commit()
             yield conn
@@ -628,20 +650,82 @@ class TestBuildXrefsQueryOrthologFallback:
     def test_falls_back_to_genefam_orthologs_when_xref_missing(
         self, mysql_xrefs_schema: object
     ) -> None:
+        """Output-parity guard: genes with vgnc_b set get backfill; vgnc_b=NULL do not.
+
+        Gene 63410: ortholog row has vgnc_b='VGNC:59454', genefam_id_b=63410
+            -> should get hgnc_orthologs='HGNC:20'
+        Gene 63411: ortholog row has vgnc_b=NULL, genefam_id_b=63411
+            -> should NOT backfill (vgnc_b IS NOT NULL excludes it)
+
+        This test must stay green on both current HEAD and after the re-key:
+        it enforces that the output set doesn't change.
+        """
         from vgnc_download_file_generator.database.queries import (
             compile_query_for_mysql,
         )
 
         cur = mysql_xrefs_schema.cursor()  # type: ignore[attr-defined]
-        query = build_xrefs_query(genefam_ids=[63410])
+        query = build_xrefs_query(genefam_ids=[63410, 63411])
         sql, params = compile_query_for_mysql(query)
         cur.execute(sql, params)
         cols = [d[0] for d in cur.description]
-        row = dict(zip(cols, cur.fetchone(), strict=False))
+        rows = {row[0]: dict(zip(cols, row, strict=False)) for row in cur.fetchall()}
         cur.close()
 
-        assert row["ncbi_gene_id"] == "101088636"
-        assert row["hgnc_orthologs"] == "HGNC:20"
+        # Gene 63410: vgnc_b is set -> should backfill
+        assert rows[63410]["ncbi_gene_id"] == "101088636"
+        assert rows[63410]["hgnc_orthologs"] == "HGNC:20"
+
+        # Gene 63411: vgnc_b is NULL -> should NOT backfill (preserves current behavior)
+        assert rows[63411]["ncbi_gene_id"] == "101088637"
+        assert rows[63411]["hgnc_orthologs"] is None
+
+    def test_ortholog_explain_access_path_uses_genefam_id_b(
+        self, mysql_xrefs_schema: object
+    ) -> None:
+        """Access-path guard: join uses genefam_id_b (indexed), not vgnc_b (unindexed).
+
+        RED test on current gcp HEAD: fails because the query joins on
+        go.vgnc_b = gf.assigned_id (unindexed), not go.genefam_id_b = ghx.genefam_id (indexed).
+
+        This test also verifies via information_schema that an index whose
+        leading column is genefam_id_b exists (the fixture creates it,
+        so this assertion fails only if the fixture itself is broken).
+        """
+        # 1. Assert the query text joins on genefam_id_b, not vgnc_b
+        query = build_xrefs_query()
+        sql = query.text
+
+        # Must join on genefam_id_b (indexed access path)
+        assert "genefam_id_b" in sql, (
+            "build_xrefs_query() must join genefam_orthologs on genefam_id_b "
+            "(the indexed FK); currently joins on unindexed vgnc_b"
+        )
+        # Must NOT join on vgnc_b using equality (unindexed, causes full table scan)
+        # "go.vgnc_b IS NOT NULL" is fine - it's a post-index predicate
+        assert "go.vgnc_b =" not in sql.replace(" ", ""), (
+            "build_xrefs_query() must NOT join on go.vgnc_b = ... (unindexed); "
+            "use genefam_id_b instead. go.vgnc_b IS NOT NULL is allowed as a "
+            "post-index predicate to preserve the current row set."
+        )
+
+        # 2. Verify the index exists (information_schema guard)
+        cur = mysql_xrefs_schema.cursor()  # type: ignore[attr-defined]
+        cur.execute("""
+            SELECT index_name, seq_in_index, column_name
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'genefam_orthologs'
+              AND seq_in_index = 1
+            ORDER BY index_name, seq_in_index
+        """)
+        leading_columns = [row[2] for row in cur.fetchall()]
+        cur.close()
+
+        assert "genefam_id_b" in leading_columns, (
+            f"genefam_orthologs must have an index whose leading column is "
+            f"genefam_id_b; got leading columns: {leading_columns}"
+        )
 
 
 class TestBuildAliasesQuery:
