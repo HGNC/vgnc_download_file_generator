@@ -1,6 +1,12 @@
 """Tests for VgncPublic.stream_rows() method."""
-
+import contextlib
+import os
+import random
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import MagicMock
+
+import pytest
 
 from vgnc_download_file_generator.database.connection import DatabaseConnection
 from vgnc_download_file_generator.generators.vgnc_public import VgncPublic
@@ -13,229 +19,89 @@ def _no_compile(*_args, **_kwargs):
 
 
 class TestVgncPublicStreamRows:
-    """Tests for VgncPublic.stream_rows() method."""
+    """stream_rows() delegates to the shared, drop-safe keyset paginator.
 
-    def test_uses_build_gene_query(self) -> None:
-        """Test that stream_rows uses build_gene_query()."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+    Regression guard for the Cloud Run "Server has gone away" (2013/2006)
+    failure: no generator may hold one server-side cursor open for the whole
+    stream. These cover the pagination mechanics once for the shared
+    ``BaseFileGenerator._paginate_gene_stream``; the per-generator stream tests
+    only assert their own filters.
+    """
 
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
+    def _generator(self, db: Any, taxon_id: int = 9593) -> VgncPublic:
+        species = SpeciesInfo(taxon_id=taxon_id, display_name="Test Species", is_live="Y")
+        return VgncPublic(db=db, species=species, locus_group=None, locus_type=None)
 
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        # Use a list with empty list as side_effect - returns empty list on first call,
-        # then raises StopIteration which the while loop in stream_gene_data handles
-        mock_cursor.fetchmany.side_effect = [[]]
-        mock_cursor.description = []  # Mock empty cursor description
-        db.get_streaming_cursor.return_value = mock_cursor
+    def test_stream_rows_does_not_use_streaming_cursor(self, paginating_db) -> None:
+        """No server-side cursor may be held open for the gene stream."""
+        db = paginating_db([1, 2, 3], 2)
+        gen = self._generator(db)
+        list(gen.stream_rows(chunk_size=5000, batch_size=2))
 
-        # Stream rows (should be empty due to mocking)
-        list(generator.stream_rows(chunk_size=5000))
+        db.get_streaming_cursor.assert_not_called()
 
-        # Verify get_streaming_cursor was called
-        db.get_streaming_cursor.assert_called_once()
+    def test_stream_rows_checks_out_connection_per_batch(self, paginating_db) -> None:
+        """A fresh connection is checked out per page and returned to the pool."""
+        db = paginating_db([1, 2, 3], 2)
+        gen = self._generator(db)
+        list(gen.stream_rows(chunk_size=5000, batch_size=2))
 
-    def test_applies_species_filter_to_query(self) -> None:
-        """Test that species taxon_id filter is applied to the query."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        # Pages served: [1,2] then [3] (short -> loop stops, no empty page
+        # query) => 2 checkouts, and each was returned to the pool.
+        assert db.get_connection.call_count == 2
+        for conn in db._conns:
+            assert conn.close.called, "connection was not returned to the pool"
 
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
+    def test_stream_rows_paginates_all_rows_in_order(self, paginating_db) -> None:
+        """Every gene is yielded exactly once, ascending, with no gaps/dupes."""
+        db = paginating_db([1, 2, 3, 4, 5], 2)
+        gen = self._generator(db)
+        chunks = list(gen.stream_rows(chunk_size=100, batch_size=2))
 
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        # Return empty list to signal end of result set
-        mock_cursor.fetchmany.side_effect = [[]]
-        mock_cursor.description = []
-        db.get_streaming_cursor.return_value = mock_cursor
+        ids = [row["vgnc_id"] for chunk in chunks for row in chunk]
+        assert ids == ["VGNC:1", "VGNC:2", "VGNC:3", "VGNC:4", "VGNC:5"]
 
-        # Stream rows
-        list(generator.stream_rows())
 
-        # Verify cursor.execute was called
-        mock_cursor.execute.assert_called_once()
-        # The query should contain the taxon_id filter
-        call_args = mock_cursor.execute.call_args
-        query = call_args[0][0]
-        # Query should have taxon_id filter
-        assert "9593" in str(query) or "taxon_id" in str(query).lower()
+    def test_stream_rows_advances_keyset_after_id(
+        self, paginating_db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The paginator must advance after_genefam_id across pages (no infinite loop)."""
+        from vgnc_download_file_generator.database import queries_split
 
-    def test_query_includes_chromosome_location_fields(self) -> None:
-        """Test that the query still selects chromosome/location context."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        real = queries_split.build_gene_id_page_query
+        recorded: list = []
 
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
+        def spy(filters=None, after_genefam_id=None, limit=None):  # type: ignore[no-untyped-def]
+            recorded.append(after_genefam_id)
+            return real(filters=filters, after_genefam_id=after_genefam_id, limit=limit)
 
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        # Return empty list to signal end of result set
-        mock_cursor.fetchmany.side_effect = [[]]
-        mock_cursor.description = []
-        db.get_streaming_cursor.return_value = mock_cursor
+        monkeypatch.setattr(queries_split, "build_gene_id_page_query", spy)
 
-        # Stream rows
-        list(generator.stream_rows())
+        db = paginating_db([1, 2, 3, 4, 5], 2)
+        list(self._generator(db).stream_rows(chunk_size=100, batch_size=2))
 
-        # Verify cursor.execute was called
-        mock_cursor.execute.assert_called_once()
-        # The query should still include chromosome context in SELECT/JOINs
-        call_args = mock_cursor.execute.call_args
-        query = call_args[0][0]
-        # Query should reference chromosome columns/tables
-        assert "chromosome" in str(query).lower()
+        # Pages: [1,2] (after=None), [3,4] (after=2), [5] (after=4).
+        assert recorded == [None, 2, 4]
 
-    def test_yields_chunks_of_correct_size(self) -> None:
-        """Test that stream_rows yields chunks of the specified size."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+    def test_stream_rows_empty_dataset_yields_nothing(self, paginating_db) -> None:
+        """An empty result set yields no chunks and still releases its connection."""
+        db = paginating_db([], 5)
+        chunks = list(self._generator(db).stream_rows(chunk_size=100, batch_size=5))
 
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
+        assert chunks == []
+        assert db.get_connection.call_count == 1  # one page query -> empty -> stop
+        for conn in db._conns:
+            assert conn.close.called, "connection was not returned to the pool"
 
-        # Mock the split query approach
-        # Query 1: Main gene data (returns 8 rows)
-        gene_cursor = MagicMock()
-        gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
-        gene_cursor.__iter__ = lambda _self: iter([
-            (1, "GENE1"),
-            (2, "GENE2"),
-            (3, "GENE3"),
-            (4, "GENE4"),
-            (5, "GENE5"),
-            (6, "GENE6"),
-            (7, "GENE7"),
-            (8, "GENE8"),
-        ])
+    def test_stream_rows_exact_multiple_termination(self, paginating_db) -> None:
+        """A count exactly divisible by batch_size terminates via one trailing empty page."""
+        db = paginating_db([1, 2, 3, 4], 2)
+        chunks = list(self._generator(db).stream_rows(chunk_size=100, batch_size=2))
 
-        # Queries 2-4: Return empty results
-        empty_cursor = MagicMock()
-        empty_cursor.description = []
-        empty_cursor.__iter__ = lambda _self: iter([])
-
-        # Configure mock to return different cursers for each call
-        # get_streaming_cursor for gene data, get_cursor for other queries
-        call_count = [0]
-        def get_cursor_side_effect(*_args, **_kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:  # First call - gene data query
-                return gene_cursor
-            else:  # Subsequent calls - xrefs, aliases, dates
-                return empty_cursor
-
-        db.get_streaming_cursor.return_value = gene_cursor
-        db.get_cursor.side_effect = get_cursor_side_effect
-
-        # Stream rows with chunk_size=5
-        chunks = list(generator.stream_rows(chunk_size=5))
-
-        # Should get 2 chunks
-        assert len(chunks) == 2
-        # First chunk should have 5 rows
-        assert len(chunks[0]) == 5
-        # Second chunk should have 3 rows
-        assert len(chunks[1]) == 3
-
-    def test_returns_iterator(self) -> None:
-        """Test that stream_rows returns an iterator."""
-        from collections.abc import Iterator
-
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
-
-        # Mock empty result for split queries
-        gene_cursor = MagicMock()
-        gene_cursor.description = []
-        gene_cursor.__iter__ = lambda _self: iter([])
-
-        empty_cursor = MagicMock()
-        empty_cursor.description = []
-        empty_cursor.__iter__ = lambda _self: iter([])
-
-        call_count = [0]
-        def get_cursor_side_effect(*_args, **_kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return gene_cursor
-            else:
-                return empty_cursor
-
-        db.get_streaming_cursor.return_value = gene_cursor
-        db.get_cursor.side_effect = get_cursor_side_effect
-
-        result = generator.stream_rows()
-
-        assert isinstance(result, Iterator)
-
-    def test_uses_split_queries(self) -> None:
-        """Test that stream_rows uses split query architecture."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-
-        generator = VgncPublic(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
-
-        # Mock split query responses
-        gene_cursor = MagicMock()
-        gene_cursor.description = [("genefam_id",), ("assigned_symbol",)]
-        gene_cursor.__iter__ = lambda _self: iter([(1, "GENE1")])
-
-        empty_cursor = MagicMock()
-        empty_cursor.description = []
-        empty_cursor.__iter__ = lambda _self: iter([])
-
-        # Track which cursors were called
-        calls = []
-        def get_streaming_cursor_side_effect():
-            calls.append("get_streaming_cursor")
-            return gene_cursor
-
-        def get_cursor_side_effect():
-            calls.append("get_cursor")
-            return empty_cursor
-
-        db.get_streaming_cursor.side_effect = get_streaming_cursor_side_effect
-        db.get_cursor.side_effect = get_cursor_side_effect
-
-        # Stream rows
-        list(generator.stream_rows(chunk_size=1000))
-
-        # Verify split query pattern:
-        # 1 get_streaming_cursor call for gene data
-        # 1 get_cursor call for sub-queries (xrefs, aliases, dates reuse same cursor)
-        assert calls.count("get_streaming_cursor") == 1
-        assert calls.count("get_cursor") == 1
+        ids = [row["vgnc_id"] for chunk in chunks for row in chunk]
+        assert ids == ["VGNC:1", "VGNC:2", "VGNC:3", "VGNC:4"]
+        # Full pages [1,2],[3,4] then an empty page -> 3 checkouts.
+        assert db.get_connection.call_count == 3
 
 
 class TestVgncPublicRuntimeValidation:
@@ -371,3 +237,120 @@ class TestVgncPublicLocationSortable:
 
         assert rows[0]["location"] is None
         assert rows[0]["location_sortable"] is None
+
+
+@pytest.mark.integration
+class TestVgncPublicStreamRowsPaginationIntegration:
+    """Keyset-pagination parity against a real MySQL (connection-drop fix).
+
+    Drives the real ``stream_rows`` keyset loop through a real
+    ``DatabaseConnection`` against an ephemeral schema. Proves the walk covers
+    every gene exactly once (plus preserves family-join fan-out), in ascending
+    ``genefam_id`` page order, with the taxon filter honoured -- i.e. no gaps,
+    no dupes, no cross-page splits. (The sub-queries are stubbed; the gene-data
+    SQL access path -- the thing that changed -- is what matters here.)
+
+    Requires a local MySQL reachable via ``MYSQL_TEST_DSN`` (default
+    ``root:root@127.0.0.1:3306``); skipped unless ``--integration`` is passed.
+    """
+
+    @pytest.fixture
+    def mysql_stream_db(self, monkeypatch: pytest.MonkeyPatch) -> Iterator[DatabaseConnection]:
+        import MySQLdb as _mysql
+
+        from vgnc_download_file_generator.config import DatabaseConfig
+
+        dsn = os.environ.get("MYSQL_TEST_DSN", "root:root@127.0.0.1:3306")
+        creds, hostport = dsn.rsplit("@", 1)
+        user, passwd = creds.split(":", 1)
+        host, port = hostport.split(":", 1)
+        schema = f"test_vgnc_stream_{os.getpid()}_{random.randint(1000, 9999)}"
+
+        admin = _mysql.connect(host=host, user=user, passwd=passwd, port=int(port))
+        cur = admin.cursor()
+        try:
+            cur.execute(f"CREATE DATABASE `{schema}`")
+            cur.execute(f"USE `{schema}`")
+            # Gene-data query tables (LEFT JOINs -> empty stubs are fine except
+            # where we seed fan-out). Columns match what the SELECT references.
+            for stmt in (
+                "CREATE TABLE genefam (genefam_id INT PRIMARY KEY, taxon_id INT, "
+                "assigned_id VARCHAR(28), assigned_symbol VARCHAR(64), "
+                "assigned_name VARCHAR(255), status_id INT)",
+                "CREATE TABLE gene_status (id INT PRIMARY KEY, status VARCHAR(32))",
+                "CREATE TABLE gene_has_locus_type (genefam_id INT, locus_type_id INT)",
+                "CREATE TABLE locus_type (id INT PRIMARY KEY, type VARCHAR(32), locus_group_id INT)",
+                "CREATE TABLE locus_group (id INT PRIMARY KEY, name VARCHAR(64))",
+                "CREATE TABLE gene_has_location (gene_id INT, location_id INT, assembly_id INT)",
+                "CREATE TABLE gene_location (id INT PRIMARY KEY, chr_id INT, "
+                "start INT, `end` INT, strand INT, band VARCHAR(32))",
+                "CREATE TABLE chromosomes (chr_id INT PRIMARY KEY, taxon_id INT, display_name VARCHAR(32))",
+                "CREATE TABLE assembly (id INT PRIMARY KEY, taxon_id INT, is_vgnc_default INT, is_current INT)",
+                "CREATE TABLE assembly_has_chr (assembly_id INT, chr_id INT)",
+                "CREATE TABLE gene_has_family (genefam_id INT, family_id INT)",
+                "CREATE TABLE family_new (id INT PRIMARY KEY, name VARCHAR(64))",
+            ):
+                cur.execute(stmt)
+
+            cur.executemany("INSERT INTO gene_status VALUES (%s, %s)",
+                            [(6, "Approved"), (11, "Approved-N"), (12, "Approved-M")])
+            # Seven genes for taxon 9593 (status_id in PUBLIC_STATUS_IDS [6,11,12]),
+            # ascending genefam_id. Gene 103 will fan out to two families.
+            cur.executemany(
+                "INSERT INTO genefam VALUES (%s, 9593, %s, %s, %s, 6)",
+                [(gid, f"VGNC:{gid}", f"SYM{gid}", f"Name {gid}") for gid in range(101, 108)],
+            )
+            # Cross-taxon gene that the taxon filter MUST exclude.
+            cur.execute("INSERT INTO genefam VALUES (201, 9999, 'VGNC:201', 'SYM201', 'Name 201', 6)")
+            # Family fan-out for gene 103 -> two family rows.
+            cur.executemany("INSERT INTO family_new VALUES (%s, %s)", [(1, "FamA"), (2, "FamB")])
+            cur.executemany("INSERT INTO gene_has_family VALUES (%s, %s)", [(103, 1), (103, 2)])
+            admin.commit()
+
+            # Sub-queries are out of scope for this access-path test: stub them
+            # so we don't need the xref/alias/date tables. stream_rows imports
+            # fetch_sub_data_for_batch from the module at call time.
+            monkeypatch.setattr(
+                "vgnc_download_file_generator.database.queries_split.fetch_sub_data_for_batch",
+                lambda _ids, _cur, _fn: ([], [], []),
+            )
+
+            db = DatabaseConnection(
+                DatabaseConfig(
+                    dbhost=host, dbuser=user, dbpasswd=passwd, dbport=int(port), dbname=schema
+                )
+            )
+            try:
+                yield db
+            finally:
+                db._pool.dispose()  # type: ignore[attr-defined]
+        finally:
+            with contextlib.suppress(Exception):
+                cur.execute(f"DROP DATABASE IF EXISTS `{schema}`")
+            cur.close()
+            admin.close()
+
+    def test_keyset_pagination_covers_all_genes_in_order(
+        self, mysql_stream_db: DatabaseConnection
+    ) -> None:
+        """Pagination yields each gene once, ascending, with fan-out preserved."""
+        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        gen = VgncPublic(db=mysql_stream_db, species=species, locus_group=None, locus_type=None)
+
+        # batch_size=3 over 7 genes -> pages [101,102,103],[104,105,106],[107].
+        rows = [row for chunk in gen.stream_rows(chunk_size=100, batch_size=3) for row in chunk]
+        ids = [row["vgnc_id"] for row in rows]
+
+        # Every target-taxon gene present, exactly once (103 twice via fan-out).
+        assert sorted(set(ids)) == [f"VGNC:{gid}" for gid in range(101, 108)]
+        assert ids.count("VGNC:103") == 2
+        # 7 unique genes + 1 family-fan-out row for gene 103.
+        assert len(ids) == 8
+        # Cross-taxon gene excluded by the taxon filter.
+        assert "VGNC:201" not in ids
+        # Pages arrive in ascending keyset order (collapse the 103 duplicate).
+        seen: list[str] = []
+        for vid in ids:
+            if not seen or seen[-1] != vid:
+                seen.append(vid)
+        assert seen == [f"VGNC:{gid}" for gid in range(101, 108)]

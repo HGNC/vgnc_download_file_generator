@@ -13,106 +13,25 @@ from typing import Any
 from sqlalchemy import bindparam
 from sqlalchemy.sql.expression import TextClause, text
 
+_GENE_DATA_SELECT = '\n        SELECT DISTINCT\n            gf.genefam_id,\n            gf.taxon_id,\n            gf.assigned_id,\n            gf.assigned_symbol,\n            gf.assigned_name,\n            gs.status AS gene_status,\n            lt.type AS locus_type,\n            lg.name AS locus_group,\n            c.display_name AS chromosome,\n            gl.start,\n            gl.end,\n            gl.strand,\n            gl.band,\n            fn.id AS gene_family_id,\n            fn.name AS gene_family'
+_GENE_FROM_JOINS_WHERE = 'FROM genefam gf\n        LEFT JOIN gene_has_locus_type ghtlt ON gf.genefam_id = ghtlt.genefam_id\n        LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id\n        LEFT JOIN locus_group lg ON lt.locus_group_id = lg.id\n        LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id\n            AND ghl.location_id = (\n                SELECT ghl_pick.location_id\n                FROM gene_has_location ghl_pick\n                JOIN gene_location gl_pick ON gl_pick.id = ghl_pick.location_id\n                JOIN chromosomes c_pick ON c_pick.chr_id = gl_pick.chr_id\n                LEFT JOIN assembly a_pick ON a_pick.id = ghl_pick.assembly_id\n                WHERE ghl_pick.gene_id = gf.genefam_id\n                    AND c_pick.taxon_id = gf.taxon_id\n                    AND EXISTS (\n                        SELECT 1\n                        FROM assembly_has_chr ahc\n                        JOIN assembly a2 ON a2.id = ahc.assembly_id\n                        WHERE ahc.chr_id = c_pick.chr_id\n                            AND a2.is_vgnc_default = 1\n                            AND a2.taxon_id = gf.taxon_id\n                    )\n                ORDER BY\n                    CASE\n                        WHEN a_pick.is_vgnc_default = 1 THEN 0\n                        ELSE 1\n                    END,\n                    CASE\n                        WHEN a_pick.is_current = 1 THEN 0\n                        ELSE 1\n                    END,\n                    a_pick.id DESC,\n                    ghl_pick.location_id DESC\n                LIMIT 1\n            )\n        LEFT JOIN gene_location gl ON ghl.location_id = gl.id\n        LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id\n            AND c.taxon_id = gf.taxon_id\n        LEFT JOIN gene_status gs ON gf.status_id = gs.id\n        LEFT JOIN gene_has_family ghf ON gf.genefam_id = ghf.genefam_id\n        LEFT JOIN family_new fn ON ghf.family_id = fn.id\n        WHERE 1=1\n    '
 
-def build_gene_data_query(
-    filters: dict[str, str | int | list[str]] | None = None,
-) -> TextClause:
-    """Build main gene data query with core joins only.
 
-    This query fetches the core gene information including:
-    - Basic gene data (genefam table)
-    - Gene status (gene_status)
-    - Locus type and group (locus_type, locus_group)
-    - Genomic location (gene_has_location, assembly, gene_location, chromosomes).
-      Location selection is source-agnostic: choose one best location row whose
-      chromosome belongs to any species default assembly via assembly_has_chr.
-      This recovers genes such as VGNC:30914 where location is stored on a
-      non-default assembly but the chromosome is part of the default assembly,
-      while still collapsing to one row per gene.
-    - Gene family (gene_has_family, family_new)
+def _apply_gene_filters(
+    filters: dict[str, str | int | list[str]] | None,
+) -> tuple[list[str], dict[str, str | int | tuple[str | int, ...]]]:
+    """Build the WHERE-clause fragments + bind params shared by the gene queries.
 
-    Xrefs, aliases, and dates are fetched in separate queries.
+    Applied identically by :func:`build_gene_data_query` and
+    :func:`build_gene_id_page_query` so the id-page walk and the row fetch see
+    exactly the same gene set.
 
-    Args:
-        filters: Dictionary of filter criteria. Keys can be:
-            - taxon_id: Filter by species taxonomy ID
-            - locus_type: Filter by locus type
-            - locus_group: Filter by locus group
-            - status_id: Filter by gene status_id (int or list for IN clause)
-            - status: Filter by gene status (string or list for IN clause)
-
-    Returns:
-        SQLAlchemy TextClause with bind parameters
-
-    Example:
-        >>> query = build_gene_data_query(filters={"taxon_id": 9913})
-        >>> cursor.execute(*compile_query_for_mysql(query))
+    Supported keys: ``taxon_id``, ``locus_type``, ``locus_group``, ``status_id``
+    (single value or list -> IN), ``status`` (single value or list -> IN).
     """
     filters = filters or {}
-
-    sql = """
-        SELECT DISTINCT
-            gf.genefam_id,
-            gf.taxon_id,
-            gf.assigned_id,
-            gf.assigned_symbol,
-            gf.assigned_name,
-            gs.status AS gene_status,
-            lt.type AS locus_type,
-            lg.name AS locus_group,
-            c.display_name AS chromosome,
-            gl.start,
-            gl.end,
-            gl.strand,
-            gl.band,
-            fn.id AS gene_family_id,
-            fn.name AS gene_family
-        FROM genefam gf
-        LEFT JOIN gene_has_locus_type ghtlt ON gf.genefam_id = ghtlt.genefam_id
-        LEFT JOIN locus_type lt ON ghtlt.locus_type_id = lt.id
-        LEFT JOIN locus_group lg ON lt.locus_group_id = lg.id
-        LEFT JOIN gene_has_location ghl ON gf.genefam_id = ghl.gene_id
-            AND ghl.location_id = (
-                SELECT ghl_pick.location_id
-                FROM gene_has_location ghl_pick
-                JOIN gene_location gl_pick ON gl_pick.id = ghl_pick.location_id
-                JOIN chromosomes c_pick ON c_pick.chr_id = gl_pick.chr_id
-                LEFT JOIN assembly a_pick ON a_pick.id = ghl_pick.assembly_id
-                WHERE ghl_pick.gene_id = gf.genefam_id
-                    AND c_pick.taxon_id = gf.taxon_id
-                    AND EXISTS (
-                        SELECT 1
-                        FROM assembly_has_chr ahc
-                        JOIN assembly a2 ON a2.id = ahc.assembly_id
-                        WHERE ahc.chr_id = c_pick.chr_id
-                            AND a2.is_vgnc_default = 1
-                            AND a2.taxon_id = gf.taxon_id
-                    )
-                ORDER BY
-                    CASE
-                        WHEN a_pick.is_vgnc_default = 1 THEN 0
-                        ELSE 1
-                    END,
-                    CASE
-                        WHEN a_pick.is_current = 1 THEN 0
-                        ELSE 1
-                    END,
-                    a_pick.id DESC,
-                    ghl_pick.location_id DESC
-                LIMIT 1
-            )
-        LEFT JOIN gene_location gl ON ghl.location_id = gl.id
-        LEFT JOIN chromosomes c ON gl.chr_id = c.chr_id
-            AND c.taxon_id = gf.taxon_id
-        LEFT JOIN gene_status gs ON gf.status_id = gs.id
-        LEFT JOIN gene_has_family ghf ON gf.genefam_id = ghf.genefam_id
-        LEFT JOIN family_new fn ON ghf.family_id = fn.id
-        WHERE 1=1
-    """
-
-    # Build dynamic WHERE clauses
     where_clauses: list[str] = []
-    bind_params: dict[str, str | int | tuple[str, ...]] = {}
+    bind_params: dict[str, str | int | tuple[str | int, ...]] = {}
     param_counter = 0
 
     if filters:
@@ -162,24 +81,135 @@ def build_gene_data_query(
                 bind_params[param_name] = status_value
             param_counter += 1
 
-    # Append WHERE clauses
-    if where_clauses:
-        for clause in where_clauses:
-            sql = f"{sql}\n          AND {clause}"
+    return where_clauses, bind_params
 
-    # Create text construct with bind parameters
+
+def _gene_bindparams(
+    bind_params: dict[str, str | int | tuple[str | int, ...]],
+) -> list[Any]:
+    """Expand a {{name: value}} map into SQLAlchemy bindparam() objects.
+
+    Tuple values become expanding IN-clause bind params.
+    """
+    bindparam_list: list[Any] = []
+    for name, value in bind_params.items():
+        if isinstance(value, tuple):
+            bindparam_list.append(bindparam(name, value=value, expanding=True))
+        else:
+            bindparam_list.append(bindparam(name, value=value))
+    return bindparam_list
+
+
+def _assemble_gene_query(
+    select_clause: str,
+    filters: dict[str, str | int | list[str]] | None,
+    extra_where: list[str] | None = None,
+    extra_params: dict[str, str | int | tuple[str | int, ...]] | None = None,
+    trailing_sql: str = "",
+) -> TextClause:
+    """Assemble SELECT + shared FROM/JOINs/WHERE(+filters) into a TextClause.
+
+    The gene-data query and the keyset id-page query share the exact same
+    FROM/JOINs and WHERE-filter logic; only the SELECT projection and any
+    trailing keyset/ORDER/LIMIT differ.
+
+    Args:
+        select_clause: The SELECT projection text (without trailing FROM).
+        filters: Gene filters (taxon_id / locus / status...).
+        extra_where: Extra WHERE fragments appended after the standard filters.
+        extra_params: Bind params for ``extra_where``/``trailing_sql``.
+        trailing_sql: SQL appended after all WHERE clauses (e.g. ORDER BY/LIMIT).
+    """
+    sql = f"{select_clause} {_GENE_FROM_JOINS_WHERE}"
+
+    where_clauses, bind_params = _apply_gene_filters(filters)
+    if extra_where:
+        where_clauses = where_clauses + extra_where
+    if extra_params:
+        bind_params.update(extra_params)
+
+    for clause in where_clauses:
+        sql = f"{sql}\n          AND {clause}"
+
+    sql = f"{sql}{trailing_sql}"
+
     if bind_params:
-        bindparam_list: list[Any] = []
-        for name, value in bind_params.items():
-            if isinstance(value, tuple):
-                bindparam_list.append(bindparam(name, value=value, expanding=True))
-            else:
-                bindparam_list.append(bindparam(name, value=value))
-        query = text(sql).bindparams(*bindparam_list)
-    else:
-        query = text(sql)
+        return text(sql).bindparams(*_gene_bindparams(bind_params))
+    return text(sql)
 
-    return query
+
+def build_gene_data_query(
+    filters: dict[str, str | int | list[str]] | None = None,
+    genefam_ids: list[int] | None = None,
+) -> TextClause:
+    """Build main gene data query with core joins only.
+
+    Fetches the core gene information (genefam, gene_status, locus_type/group,
+    genomic location, gene family). Xrefs, aliases, and dates are fetched in
+    separate queries.
+
+    Args:
+        filters: Filter criteria (taxon_id / locus_type / locus_group /
+            status_id / status).
+        genefam_ids: Optional list of genefam_ids. When given, the query is
+            restricted to ``gf.genefam_id IN :genefam_ids``. This is how the
+            keyset-paginated exporter fetches one bounded page of rows; without
+            it the query returns the full filtered set (backward compatible).
+
+    Returns:
+        SQLAlchemy TextClause with bind parameters
+
+    Example:
+        >>> query = build_gene_data_query(filters={"taxon_id": 9913})
+        >>> cursor.execute(*compile_query_for_mysql(query))
+    """
+    select_clause = _GENE_DATA_SELECT
+    extra_where: list[str] = []
+    extra_params: dict[str, str | int | tuple[str | int, ...]] = {}
+    if genefam_ids is not None:
+        extra_where.append("gf.genefam_id IN :genefam_ids")
+        extra_params["genefam_ids"] = tuple(genefam_ids)
+    return _assemble_gene_query(select_clause, filters, extra_where, extra_params)
+
+
+def build_gene_id_page_query(
+    filters: dict[str, str | int | list[str]] | None = None,
+    after_genefam_id: int | None = None,
+    limit: int | None = None,
+) -> TextClause:
+    """Build a keyset id-page query for batched, connection-safe export.
+
+    Returns one bounded page of distinct ``genefam_id`` values greater than
+    ``after_genefam_id``, in ascending order, with the same filters as the main
+    gene query. The exporter walks these pages so it never holds a single
+    server-side cursor (and its MySQL connection) open for the whole dataset,
+    which is what caused the Cloud Run ``(2013)``/``(2006)`` drops.
+
+    The page is ``genefam_id``-keyed (the ``genefam`` PK), so pagination is
+    stable and lossless: a gene's rows share one id, so advancing past the last
+    id in a page never splits or skips a gene.
+
+    Args:
+        filters: Filter criteria (same keys as :func:`build_gene_data_query`).
+        after_genefam_id: Exclusive lower bound (previous page's last id).
+            When None, the first page starts from the lowest id.
+        limit: Page size (max distinct genefam_ids returned).
+
+    Returns:
+        SQLAlchemy TextClause with bind parameters
+    """
+    select_clause = "\n        SELECT DISTINCT gf.genefam_id\n    "
+    extra_where: list[str] = []
+    extra_params: dict[str, str | int | tuple[str | int, ...]] = {}
+    if after_genefam_id is not None:
+        extra_where.append("gf.genefam_id > :after_genefam_id")
+        extra_params["after_genefam_id"] = after_genefam_id
+    trailing_sql = ""
+    if limit is not None:
+        trailing_sql = "\n        ORDER BY gf.genefam_id\n        LIMIT :limit"
+        extra_params["limit"] = limit
+    return _assemble_gene_query(select_clause, filters, extra_where, extra_params, trailing_sql)
+
 
 
 def build_xrefs_query(genefam_ids: list[int] | None = None) -> TextClause:

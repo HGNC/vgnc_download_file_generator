@@ -19,6 +19,7 @@ from vgnc_download_file_generator.database.queries_split import (
     build_aliases_query,
     build_dates_query,
     build_gene_data_query,
+    build_gene_id_page_query,
     build_xrefs_query,
     merge_gene_results,
 )
@@ -375,6 +376,76 @@ class TestBuildGeneDataQuery:
         # Should use IN clause for multiple values
         assert "gf.status_id" in sql
         assert "IN" in sql
+
+
+class TestBuildGeneIdPageQuery:
+    """Keyset ID-page query for batched gene export (connection-drop fix).
+
+    The export no longer holds one server-side cursor open for the whole
+    dataset; instead it walks ``genefam_id`` in bounded pages. These tests pin
+    the access path the generator relies on.
+    """
+
+    def test_returns_text_clause(self) -> None:
+        """The page query is a SQLAlchemy TextClause."""
+        query = build_gene_id_page_query(filters=None, after_genefam_id=0, limit=5000)
+        assert isinstance(query, TextClause)
+
+    def test_selects_distinct_genefam_id_only(self) -> None:
+        """Page query selects only the distinct PK used as the keyset."""
+        sql = build_gene_id_page_query(filters=None, after_genefam_id=0, limit=5000).text
+        assert "SELECT DISTINCT gf.genefam_id" in sql
+        # Must not drag the wide projection (those come from build_gene_data_query)
+        assert "assigned_symbol" not in sql
+        assert "ncbi_gene_id" not in sql
+
+    def test_has_keyset_after_order_and_limit(self) -> None:
+        """Page query carries the keyset predicate, ordering, and LIMIT."""
+        sql = build_gene_id_page_query(filters=None, after_genefam_id=123, limit=5000).text
+        assert "gf.genefam_id > :after_genefam_id" in sql
+        assert "ORDER BY gf.genefam_id" in sql
+        assert "LIMIT :limit" in sql
+
+    def test_inherits_filters(self) -> None:
+        """taxon_id / status_id filters are routed into the page query too."""
+        sql = build_gene_id_page_query(
+            filters={"taxon_id": 9913, "status_id": [6, 11, 12]},
+            after_genefam_id=0,
+            limit=5000,
+        ).text
+        assert "gf.taxon_id" in sql
+        assert "gf.status_id" in sql
+        assert "IN" in sql
+
+    def test_reuses_same_core_joins(self) -> None:
+        """Page query shares the location/status JOINs of the main query."""
+        sql = build_gene_id_page_query(filters=None, after_genefam_id=0, limit=10).text
+        assert "FROM genefam gf" in sql
+        assert "LEFT JOIN gene_status gs" in sql
+        assert "LEFT JOIN gene_has_location ghl" in sql
+
+
+class TestBuildGeneDataQueryGenefamIdsFilter:
+    """build_gene_data_query must accept an optional genefam_ids IN filter."""
+
+    def test_genefam_ids_adds_in_clause(self) -> None:
+        """Passing genefam_ids adds an expanding IN clause on the PK."""
+        query = build_gene_data_query(filters=None, genefam_ids=[1, 2, 3])
+        sql = query.text
+        assert "gf.genefam_id IN :genefam_ids" in sql
+
+    def test_no_genefam_ids_is_backward_compatible(self) -> None:
+        """Omitting genefam_ids leaves the query unchanged (no IN clause)."""
+        query = build_gene_data_query(filters=None)
+        sql = query.text
+        assert "genefam_ids" not in sql
+
+    def test_genefam_ids_combined_with_taxon_filter(self) -> None:
+        """genefam_ids composes with the normal taxon_id filter."""
+        query = build_gene_data_query(filters={"taxon_id": 9913}, genefam_ids=[10, 11])
+        sql = query.text
+        assert "gf.taxon_id" in sql
+        assert "gf.genefam_id IN :genefam_ids" in sql
 
 
 class TestBuildXrefsQuery:

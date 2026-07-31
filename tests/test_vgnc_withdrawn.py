@@ -67,64 +67,38 @@ class TestVgncWithdrawnGetHeaders:
 
 
 class TestVgncWithdrawnStreamRows:
-    """Tests for VgncWithdrawn.stream_rows() method."""
+    """VgncWithdrawn.stream_rows() uses the shared drop-safe keyset paginator.
 
-    def test_filters_by_withdrawn_statuses(self) -> None:
-        """Test that stream_rows filters to withdrawn status types."""
-        db = MagicMock(spec=DatabaseConnection)
+    Regression context: the Cloud Run "Server has gone away" (2013/2006)
+    failure came from a long-lived server-side cursor. No generator may use
+    one; the pagination mechanics are shared and covered elsewhere, so these
+    tests pin only this generator's specific filters.
+    """
+
+    def _generator(self, db):
         species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
+        return VgncWithdrawn(db=db, species=species, locus_group=None, locus_type=None)
 
-        generator = VgncWithdrawn(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
+    def test_does_not_use_streaming_cursor(self, paginating_db) -> None:
+        """No server-side cursor is held open for the withdrawn stream."""
+        db = paginating_db([1, 2], 5)
+        list(self._generator(db).stream_rows())
+        db.get_streaming_cursor.assert_not_called()
 
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
-        db.get_streaming_cursor.return_value = mock_cursor
+    def test_filters_by_withdrawn_statuses(self, paginating_db) -> None:
+        """The query carries the withdrawn status filters."""
+        db = paginating_db([1, 2], 5)
+        list(self._generator(db).stream_rows())
+        joined_sql = " ".join(db._cursor.executed)
+        assert "gf.status_id" in joined_sql   # WITHDRAWN_STATUS_IDS [2, 3]
+        assert "gs.status" in joined_sql       # status names (Entry/Symbol Withdrawn)
 
-        # Stream rows
-        list(generator.stream_rows())
-
-        # Verify cursor.execute was called
-        mock_cursor.execute.assert_called_once()
-        # The query should filter by withdrawn statuses
-        call_args = mock_cursor.execute.call_args
-        query = call_args[0][0]
-        # Query should have withdrawn status filters
-        query_str = str(query).lower()
-        assert "withdrawn" in query_str or "status" in query_str
-
-    def test_applies_species_filter_to_query(self) -> None:
-        """Test that species taxon_id filter is applied to the query."""
-        db = MagicMock(spec=DatabaseConnection)
-        species = SpeciesInfo(taxon_id=9593, display_name="Test Species", is_live="Y")
-
-        generator = VgncWithdrawn(
-            db=db,
-            species=species,
-            locus_group=None,
-            locus_type=None,
-        )
-
-        # Mock the streaming cursor
-        mock_cursor = MagicMock()
-        mock_cursor.fetchmany.side_effect = [[], []]
-        db.get_streaming_cursor.return_value = mock_cursor
-
-        # Stream rows
-        list(generator.stream_rows())
-
-        # Verify cursor.execute was called
-        mock_cursor.execute.assert_called_once()
-        # The query should contain the taxon_id filter
-        call_args = mock_cursor.execute.call_args
-        query = call_args[0][0]
-        # Query should have taxon_id filter
-        assert "9593" in str(query) or "taxon_id" in str(query).lower()
+    def test_applies_species_filter_to_query(self, paginating_db) -> None:
+        """The taxon_id filter reaches the query."""
+        db = paginating_db([1, 2], 5)
+        list(self._generator(db).stream_rows())
+        joined_sql = " ".join(db._cursor.executed)
+        assert "gf.taxon_id" in joined_sql
 
 
 class TestVgncWithdrawnGenerateTsv:
